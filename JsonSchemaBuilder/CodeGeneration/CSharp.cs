@@ -253,6 +253,18 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     JSBBase64String jsonSchemaBuilderBase64String = value as JSBBase64String;
                     GenerateOrdinaryBase64String(codeBuilder, key, jsonSchemaBuilderBase64String);
                     break;
+                case JSBPartType.Uri:
+                    JSBUri jsonSchemaBuilderUri = value as JSBUri;
+                    GenerateOrdinaryUri(codeBuilder, key, jsonSchemaBuilderUri);
+                    break;
+                case JSBPartType.Guid:
+                    JSBGuid jsonSchemaBuilderGuid = value as JSBGuid;
+                    GenerateOrdinaryGuid(codeBuilder, key, jsonSchemaBuilderGuid);
+                    break;
+                case JSBPartType.PhoneNumber:
+                    JSBPhoneNumber jsonSchemaBuilderPhoneNumber = value as JSBPhoneNumber;
+                    GenerateOrdinaryPhoneNumber(codeBuilder, key, jsonSchemaBuilderPhoneNumber);
+                    break;
                 default:
                     codeBuilder.L($"throw new NotImplementedException(\"PartType {value.PartType} is not implemented\");");
                     break;
@@ -319,6 +331,12 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     return "DateTime";
                 case JSBPartType.Base64String:
                     return "string";
+                case JSBPartType.Uri:
+                    return "Uri";
+                case JSBPartType.Guid:
+                    return "Guid";
+                case JSBPartType.PhoneNumber:
+                    return "PhoneNumber";
                 case JSBPartType.Schema:
                     JSBSchema jSBSchema = jsonSchemaBuilderPart as JSBSchema;
                     if (jSBSchema.TopPart != null)
@@ -722,6 +740,48 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         #endregion
 
+        #region Generate Uri
+
+        private void GenerateOrdinaryUri(CodeBuilder codeBuilder, IdentifierString key, JSBUri jsonSchemaBuilderUri)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderUri);
+
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public Uri {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderUri)}")
+                .EmptyLine();
+        }
+
+        #endregion
+
+        #region Generate Guid
+
+        private void GenerateOrdinaryGuid(CodeBuilder codeBuilder, IdentifierString key, JSBGuid jsonSchemaBuilderGuid)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderGuid);
+
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public Guid {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderGuid)}")
+                .EmptyLine();
+        }
+
+        #endregion
+
+        #region Generate PhoneNumber
+
+        private void GenerateOrdinaryPhoneNumber(CodeBuilder codeBuilder, IdentifierString key, JSBPhoneNumber jsonSchemaBuilderPhoneNumber)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderPhoneNumber);
+
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public PhoneNumber {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderPhoneNumber)}")
+                .EmptyLine();
+        }
+
+        #endregion
+
         #region Generate Time
 
         private void GenerateEnumTime(CodeBuilder codeBuilder, IdentifierString key, JSBTime jsonSchemaBuilderTime)
@@ -925,6 +985,21 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private string GenerateDefaultIfExisting(IdentifierString key, JSBEmail jsonSchemaBuilderEmail)
         {
             return string.IsNullOrWhiteSpace(jsonSchemaBuilderEmail.DefaultValue) ? string.Empty : $" = new Email(\"{jsonSchemaBuilderEmail.DefaultValue}\");";
+        }
+
+        private string GenerateDefaultIfExisting(IdentifierString key, JSBUri jsonSchemaBuilderUri)
+        {
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderUri.DefaultValue) ? string.Empty : $" = new Uri(\"{jsonSchemaBuilderUri.DefaultValue}\");";
+        }
+
+        private string GenerateDefaultIfExisting(IdentifierString key, JSBGuid jsonSchemaBuilderGuid)
+        {
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderGuid.DefaultValue) ? string.Empty : $" = new Guid(\"{jsonSchemaBuilderGuid.DefaultValue}\");";
+        }
+
+        private string GenerateDefaultIfExisting(IdentifierString key, JSBPhoneNumber jsonSchemaBuilderPhoneNumber)
+        {
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderPhoneNumber.DefaultValue) ? string.Empty : $" = new PhoneNumber(\"{jsonSchemaBuilderPhoneNumber.DefaultValue}\");";
         }
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBDateTime jsonSchemaBuilderDateTime)

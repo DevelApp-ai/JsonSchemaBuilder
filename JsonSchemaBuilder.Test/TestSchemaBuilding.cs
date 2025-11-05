@@ -8,6 +8,8 @@ using System.Linq;
 using DevelApp.JsonSchemaBuilder.CodeGeneration;
 using DevelApp.JsonSchemaBuilder.DataTypes;
 using System.Net.Mail;
+using UriType = DevelApp.JsonSchemaBuilder.DataTypes.Uri;
+using GuidType = DevelApp.JsonSchemaBuilder.DataTypes.Guid;
 
 namespace JsonSchemaBuilder.Test
 {
@@ -219,6 +221,145 @@ namespace JsonSchemaBuilder.Test
         {
             var email = new JSBEmail("UserEmail", "User email address");
             var schema = email.AsJsonSchema();
+            Assert.NotNull(schema);
+        }
+
+        #endregion
+
+        #region Uri Data Type Tests
+
+        [Fact]
+        public void TestUriDataClass()
+        {
+            // Test Uri creation from string
+            var uri1 = new UriType("https://example.com");
+            Assert.Equal("https://example.com/", uri1.AbsoluteUri);
+            
+            // Test implicit conversion from string
+            UriType uri2 = "https://google.com";
+            Assert.Equal("https://google.com/", uri2.AbsoluteUri);
+            
+            // Test implicit conversion to string
+            string uriStr = uri1;
+            Assert.Equal("https://example.com/", uriStr);
+            
+            // Test properties
+            Assert.Equal("https", uri1.Scheme);
+            Assert.Equal("example.com", uri1.Host);
+        }
+
+        [Fact]
+        public void TestUriFromSystemUri()
+        {
+            var systemUri = new System.Uri("https://example.com/path");
+            UriType uri = systemUri;
+            Assert.Equal("https://example.com/path", uri.AbsoluteUri);
+            
+            // Test conversion back
+            System.Uri converted = uri;
+            Assert.Equal(systemUri.AbsoluteUri, converted.AbsoluteUri);
+        }
+
+        [Fact]
+        public void TestJSBUri()
+        {
+            var uri = new JSBUri("WebsiteUrl", "Website URL", "https://example.com");
+            var schema = uri.AsJsonSchema();
+            Assert.NotNull(schema);
+        }
+
+        #endregion
+
+        #region Guid Data Type Tests
+
+        [Fact]
+        public void TestGuidDataClass()
+        {
+            // Test Guid creation from string
+            string guidStr = "550e8400-e29b-41d4-a716-446655440000";
+            var guid1 = new GuidType(guidStr);
+            Assert.Equal(guidStr, guid1.ToString());
+            
+            // Test implicit conversion from string
+            GuidType guid2 = guidStr;
+            Assert.Equal(guidStr, guid2.ToString());
+            
+            // Test implicit conversion to string
+            string converted = guid1;
+            Assert.Equal(guidStr, converted);
+            
+            // Test equality
+            Assert.Equal(guid1, guid2);
+        }
+
+        [Fact]
+        public void TestGuidFromSystemGuid()
+        {
+            var systemGuid = System.Guid.NewGuid();
+            GuidType guid = systemGuid;
+            Assert.Equal(systemGuid.ToString(), guid.ToString());
+            
+            // Test conversion back
+            System.Guid converted = guid;
+            Assert.Equal(systemGuid, converted);
+        }
+
+        [Fact]
+        public void TestGuidNewGuid()
+        {
+            var guid1 = GuidType.NewGuid();
+            var guid2 = GuidType.NewGuid();
+            Assert.NotEqual(guid1, guid2);
+        }
+
+        [Fact]
+        public void TestJSBGuid()
+        {
+            var guid = new JSBGuid("RecordId", "Record identifier", "550e8400-e29b-41d4-a716-446655440000");
+            var schema = guid.AsJsonSchema();
+            Assert.NotNull(schema);
+        }
+
+        #endregion
+
+        #region PhoneNumber Data Type Tests
+
+        [Fact]
+        public void TestPhoneNumberDataClass()
+        {
+            // Test PhoneNumber creation
+            var phone1 = new PhoneNumber("+1 (555) 123-4567");
+            Assert.Equal("+1 (555) 123-4567", phone1.Value);
+            Assert.Equal("15551234567", phone1.DigitsOnly);
+            
+            // Test implicit conversion from string
+            PhoneNumber phone2 = "+1-555-123-4567";
+            Assert.Equal("15551234567", phone2.DigitsOnly);
+            
+            // Test implicit conversion to string
+            string phoneStr = phone1;
+            Assert.Equal("+1 (555) 123-4567", phoneStr);
+        }
+
+        [Fact]
+        public void TestPhoneNumberEquality()
+        {
+            var phone1 = new PhoneNumber("+1 (555) 123-4567");
+            var phone2 = new PhoneNumber("555-123-4567");
+            var phone3 = new PhoneNumber("5551234567");
+            
+            // Different formatting but same digits should be equal
+            Assert.Equal(phone2, phone3);
+            
+            // Different numbers should not be equal
+            Assert.NotEqual(phone1, phone2); // Different due to country code
+        }
+
+        [Fact]
+        public void TestJSBPhoneNumber()
+        {
+            var phone = new JSBPhoneNumber("ContactPhone", "Contact phone number", "+1-555-123-4567");
+            var schema = phone.AsJsonSchema();
             Assert.NotNull(schema);
         }
 
