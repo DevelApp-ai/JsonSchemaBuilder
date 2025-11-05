@@ -17,6 +17,7 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         Email = 11,
         IriReference = 12,
         Schema = 13,
-        Time = 14
+        Time = 14,
+        Base64String = 15
     }
 }
