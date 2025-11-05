@@ -436,7 +436,30 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void GenerateEnumDate(CodeBuilder codeBuilder, IdentifierString key, JSBDate jsonSchemaBuilderDate)
         {
-            throw new NotImplementedException("Enum on Date has not been implemeneted");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L("{")
+                .IndentIncrease();
+            for(int counter = 0; counter < jsonSchemaBuilderDate.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderDate.Enums.Count;
+                string dateValue = jsonSchemaBuilderDate.Enums[counter] ?? "Unknown";
+                // Create valid enum name from date string (e.g., "2020-01-15" -> "Date_2020_01_15")
+                string enumName = $"Date_{dateValue.Replace("-", "_").Replace(":", "_").Replace(".", "_")}";
+                string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderDate);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderDate.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDate)}")
+                .EmptyLine();
         }
 
         #endregion
@@ -455,7 +478,30 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void GenerateEnumDateTime(CodeBuilder codeBuilder, IdentifierString key, JSBDateTime jsonSchemaBuilderDateTime)
         {
-            throw new NotImplementedException("Enum for DateTime had not been implemented");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L("{")
+                .IndentIncrease();
+            for(int counter = 0; counter < jsonSchemaBuilderDateTime.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderDateTime.Enums.Count;
+                string dateTimeValue = jsonSchemaBuilderDateTime.Enums[counter] ?? "Unknown";
+                // Create valid enum name from datetime string
+                string enumName = $"DateTime_{dateTimeValue.Replace("-", "_").Replace(":", "_").Replace(".", "_").Replace(" ", "_").Replace("T", "_")}";
+                string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderDateTime);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderDateTime.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDateTime)}")
+                .EmptyLine();
         }
 
         #endregion
@@ -671,7 +717,30 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void GenerateEnumTime(CodeBuilder codeBuilder, IdentifierString key, JSBTime jsonSchemaBuilderTime)
         {
-            throw new NotImplementedException("Enum on time is not implemented");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L("{")
+                .IndentIncrease();
+            for(int counter = 0; counter < jsonSchemaBuilderTime.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderTime.Enums.Count;
+                string timeValue = jsonSchemaBuilderTime.Enums[counter] ?? "Unknown";
+                // Create valid enum name from time string
+                string enumName = $"Time_{timeValue.Replace(":", "_").Replace(".", "_")}";
+                string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderTime);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderTime.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderTime)}")
+                .EmptyLine();
         }
 
         private void GenerateOrdinaryTime(CodeBuilder codeBuilder, IdentifierString key, JSBTime jsonSchemaBuilderTime)
@@ -851,15 +920,47 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBDateTime jsonSchemaBuilderDateTime)
         {
-            return string.IsNullOrWhiteSpace(jsonSchemaBuilderDateTime.DefaultValue) ? string.Empty : $" = DateTime.Parse(\"{jsonSchemaBuilderDateTime.DefaultValue}\");";
+            if (string.IsNullOrWhiteSpace(jsonSchemaBuilderDateTime.DefaultValue))
+            {
+                return string.Empty;
+            }
+            
+            if (jsonSchemaBuilderDateTime.Enums != null && jsonSchemaBuilderDateTime.Enums.Count > 0)
+            {
+                string enumName = $"DateTime_{jsonSchemaBuilderDateTime.DefaultValue.Replace("-", "_").Replace(":", "_").Replace(".", "_").Replace(" ", "_").Replace("T", "_")}";
+                return $" = {TransformToTitleCase(key)}Enum.{enumName};";
+            }
+            return $" = DateTime.Parse(\"{jsonSchemaBuilderDateTime.DefaultValue}\");";
         }
+        
         private string GenerateDefaultIfExisting(IdentifierString key, JSBDate jsonSchemaBuilderDate)
         {
-            return string.IsNullOrWhiteSpace(jsonSchemaBuilderDate.DefaultValue) ? string.Empty : $" = DateTime.Parse(\"{jsonSchemaBuilderDate.DefaultValue}\");";
+            if (string.IsNullOrWhiteSpace(jsonSchemaBuilderDate.DefaultValue))
+            {
+                return string.Empty;
+            }
+            
+            if (jsonSchemaBuilderDate.Enums != null && jsonSchemaBuilderDate.Enums.Count > 0)
+            {
+                string enumName = $"Date_{jsonSchemaBuilderDate.DefaultValue.Replace("-", "_").Replace(":", "_").Replace(".", "_")}";
+                return $" = {TransformToTitleCase(key)}Enum.{enumName};";
+            }
+            return $" = DateTime.Parse(\"{jsonSchemaBuilderDate.DefaultValue}\");";
         }
+        
         private string GenerateDefaultIfExisting(IdentifierString key, JSBTime jsonSchemaBuilderTime)
         {
-            return string.IsNullOrWhiteSpace(jsonSchemaBuilderTime.DefaultValue) ? string.Empty : $" = DateTime.Parse(\"{jsonSchemaBuilderTime.DefaultValue}\");";
+            if (string.IsNullOrWhiteSpace(jsonSchemaBuilderTime.DefaultValue))
+            {
+                return string.Empty;
+            }
+            
+            if (jsonSchemaBuilderTime.Enums != null && jsonSchemaBuilderTime.Enums.Count > 0)
+            {
+                string enumName = $"Time_{jsonSchemaBuilderTime.DefaultValue.Replace(":", "_").Replace(".", "_")}";
+                return $" = {TransformToTitleCase(key)}Enum.{enumName};";
+            }
+            return $" = DateTime.Parse(\"{jsonSchemaBuilderTime.DefaultValue}\");";
         }
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBBoolean jsonSchemaBuilderBoolean)
