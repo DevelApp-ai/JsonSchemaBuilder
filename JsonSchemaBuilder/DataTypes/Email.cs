@@ -104,7 +104,13 @@ namespace DevelApp.JsonSchemaBuilder.DataTypes
         {
             if (obj is Email email)
             {
-                return _mailAddress?.Address?.Equals(email._mailAddress?.Address, StringComparison.OrdinalIgnoreCase) ?? false;
+                // Handle null cases
+                if (_mailAddress == null && email._mailAddress == null)
+                    return true;
+                if (_mailAddress == null || email._mailAddress == null)
+                    return false;
+                    
+                return _mailAddress.Address?.Equals(email._mailAddress.Address, StringComparison.OrdinalIgnoreCase) ?? false;
             }
             if (obj is string str)
             {

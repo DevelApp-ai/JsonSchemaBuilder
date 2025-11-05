@@ -446,7 +446,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 bool last = counter + 1 == jsonSchemaBuilderDate.Enums.Count;
                 string dateValue = jsonSchemaBuilderDate.Enums[counter] ?? "Unknown";
                 // Create valid enum name from date string (e.g., "2020-01-15" -> "Date_2020_01_15")
-                string enumName = $"Date_{dateValue.Replace("-", "_").Replace(":", "_").Replace(".", "_")}";
+                string enumName = $"Date_{MakeValidEnumName(dateValue)}";
                 string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
                 codeBuilder
                     .L(enumString);
@@ -488,7 +488,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 bool last = counter + 1 == jsonSchemaBuilderDateTime.Enums.Count;
                 string dateTimeValue = jsonSchemaBuilderDateTime.Enums[counter] ?? "Unknown";
                 // Create valid enum name from datetime string
-                string enumName = $"DateTime_{dateTimeValue.Replace("-", "_").Replace(":", "_").Replace(".", "_").Replace(" ", "_").Replace("T", "_")}";
+                string enumName = $"DateTime_{MakeValidEnumName(dateTimeValue)}";
                 string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
                 codeBuilder
                     .L(enumString);
@@ -581,16 +581,24 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private void GenerateEnumNumber(CodeBuilder codeBuilder, IdentifierString key, JSBNumber jsonSchemaBuilderNumber)
         {
             codeBuilder
-                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L($"public enum {TransformToTitleCase(key)}Enum : long")
                 .L("{")
                 .IndentIncrease();
+            
+            // Use dictionary to track used values and avoid collisions
+            Dictionary<long, string> usedValues = new Dictionary<long, string>();
+            
             for(int counter = 0; counter < jsonSchemaBuilderNumber.Enums.Count; counter += 1)
             {
                 bool last = counter + 1 == jsonSchemaBuilderNumber.Enums.Count;
-                // Convert double to a valid enum name by replacing . with _
-                string valueName = jsonSchemaBuilderNumber.Enums[counter]?.ToString().Replace(".", "_").Replace("-", "Minus") ?? "Null";
+                double? value = jsonSchemaBuilderNumber.Enums[counter];
+                
+                // Use counter as the enum value to avoid collisions
+                long enumValue = counter;
+                string valueName = value.HasValue ? value.Value.ToString().Replace(".", "_").Replace("-", "Minus") : "Null";
                 string enumName = $"Value{valueName}";
-                string enumString = $"{enumName} = {((int)(jsonSchemaBuilderNumber.Enums[counter] ?? 0))}{(last ? "" : ",")}";
+                
+                string enumString = $"{enumName} = {enumValue}{(last ? "" : ",")}";
                 codeBuilder
                     .L(enumString);
             }
@@ -727,7 +735,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 bool last = counter + 1 == jsonSchemaBuilderTime.Enums.Count;
                 string timeValue = jsonSchemaBuilderTime.Enums[counter] ?? "Unknown";
                 // Create valid enum name from time string
-                string enumName = $"Time_{timeValue.Replace(":", "_").Replace(".", "_")}";
+                string enumName = $"Time_{MakeValidEnumName(timeValue)}";
                 string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
                 codeBuilder
                     .L(enumString);
@@ -1071,6 +1079,24 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private string BuildRequired(bool isRequired)
         {
             return isRequired ? string.Empty: "?";
+        }
+
+        /// <summary>
+        /// Creates a valid C# enum name from a string value by replacing special characters
+        /// </summary>
+        /// <param name="value">The value to convert to an enum name</param>
+        /// <returns>A valid enum name</returns>
+        private string MakeValidEnumName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "Unknown";
+            }
+            return value.Replace("-", "_")
+                        .Replace(":", "_")
+                        .Replace(".", "_")
+                        .Replace(" ", "_")
+                        .Replace("T", "_");
         }
 
         #endregion
