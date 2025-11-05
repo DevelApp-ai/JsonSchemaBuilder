@@ -98,6 +98,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 .L("using Ardalis.SmartEnum;")
                 .L("using System.Collections.Generic;")
                 .L("using System.Net.Mail;")
+                .L("using DevelApp.JsonSchemaBuilder.DataTypes;")
                 .EmptyLine()
                 .L($"namespace {_startNameSpace}")
                 .L("{")
@@ -519,7 +520,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
             codeBuilder
                 .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
-                .L($"public MailAddress {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderEmail)}")
+                .L($"public Email {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderEmail)}")
                 .EmptyLine();
         }
 
@@ -915,7 +916,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBEmail jsonSchemaBuilderEmail)
         {
-            return string.IsNullOrWhiteSpace(jsonSchemaBuilderEmail.DefaultValue) ? string.Empty : $" = new MailAddress(\"{jsonSchemaBuilderEmail.DefaultValue}\");";
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderEmail.DefaultValue) ? string.Empty : $" = new Email(\"{jsonSchemaBuilderEmail.DefaultValue}\");";
         }
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBDateTime jsonSchemaBuilderDateTime)
