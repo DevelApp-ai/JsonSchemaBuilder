@@ -38,6 +38,18 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 case Code.CSharp:
                     return CSharp.GenerateCode(this);
+                case Code.PHP:
+                    return PHP.GenerateCode(this);
+                case Code.TypeScript:
+                    return TypeScript.GenerateCode(this);
+                case Code.VB:
+                    return VB.GenerateCode(this);
+                case Code.Java:
+                    return Java.GenerateCode(this);
+                case Code.TSQL_DDL:
+                    return TSQL.GenerateCode(this);
+                case Code.CSharp_Entities:
+                    return CSharpEntities.GenerateCode(this);
                 default:
                     throw new CodeGenerationException($"Code generation of {code} is not supported");
             }
