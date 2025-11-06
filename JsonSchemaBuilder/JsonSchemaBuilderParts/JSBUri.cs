@@ -3,20 +3,20 @@ using DevelApp.Utility.Model;
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
     /// <summary>
-    /// Convenience base64-encoded string definition in Json Schema.
+    /// Convenience URI definition in Json Schema.
     /// </summary>
-    public class JSBBase64String : JSBString
+    public class JSBUri : JSBString
     {
-        public JSBBase64String(
-                IdentifierString base64StringName,
+        public JSBUri(
+                IdentifierString uriName,
                 string description,
                 string defaultValue = null,
                 bool isRequired = false)
-            : base(base64StringName,
+            : base(uriName,
                 description,
-                format: "byte",
+                format: "uri",
                 defaultValue: defaultValue,
-                pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
+                pattern: null,
                 isRequired: isRequired)
         {
         }
@@ -25,7 +25,7 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         {
             get
             {
-                return JSBPartType.Base64String;
+                return JSBPartType.Uri;
             }
         }
     }

@@ -22,6 +22,9 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         Base64String = 16,
         AnyOf = 17,
         OneOf = 18,
-        AllOf = 19
+        AllOf = 19,
+        Uri = 20,
+        Guid = 21,
+        PhoneNumber = 22
     }
 }

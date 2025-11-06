@@ -1,4 +1,4 @@
-﻿using DevelApp.Utility.Model;
+using DevelApp.Utility.Model;
 using System;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts

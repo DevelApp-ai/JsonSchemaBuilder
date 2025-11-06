@@ -98,6 +98,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 .L("using Ardalis.SmartEnum;")
                 .L("using System.Collections.Generic;")
                 .L("using System.Net.Mail;")
+                .L("using DevelApp.JsonSchemaBuilder.DataTypes;")
                 .EmptyLine()
                 .L($"namespace {_startNameSpace}")
                 .L("{")
@@ -248,6 +249,22 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                         GenerateOrdinaryUriReference(codeBuilder, key, jsonSchemaBuilderUriReference);
                     }
                     break;
+                case JSBPartType.Base64String:
+                    JSBBase64String jsonSchemaBuilderBase64String = value as JSBBase64String;
+                    GenerateOrdinaryBase64String(codeBuilder, key, jsonSchemaBuilderBase64String);
+                    break;
+                case JSBPartType.Uri:
+                    JSBUri jsonSchemaBuilderUri = value as JSBUri;
+                    GenerateOrdinaryUri(codeBuilder, key, jsonSchemaBuilderUri);
+                    break;
+                case JSBPartType.Guid:
+                    JSBGuid jsonSchemaBuilderGuid = value as JSBGuid;
+                    GenerateOrdinaryGuid(codeBuilder, key, jsonSchemaBuilderGuid);
+                    break;
+                case JSBPartType.PhoneNumber:
+                    JSBPhoneNumber jsonSchemaBuilderPhoneNumber = value as JSBPhoneNumber;
+                    GenerateOrdinaryPhoneNumber(codeBuilder, key, jsonSchemaBuilderPhoneNumber);
+                    break;
                 default:
                     codeBuilder.L($"throw new NotImplementedException(\"PartType {value.PartType} is not implemented\");");
                     break;
@@ -312,6 +329,14 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     return "Email";
                 case JSBPartType.Time:
                     return "DateTime";
+                case JSBPartType.Base64String:
+                    return "string";
+                case JSBPartType.Uri:
+                    return "Uri";
+                case JSBPartType.Guid:
+                    return "Guid";
+                case JSBPartType.PhoneNumber:
+                    return "PhoneNumber";
                 case JSBPartType.Schema:
                     JSBSchema jSBSchema = jsonSchemaBuilderPart as JSBSchema;
                     if (jSBSchema.TopPart != null)
@@ -387,7 +412,31 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void GenerateEnumBoolean(CodeBuilder codeBuilder, IdentifierString key, JSBBoolean jsonSchemaBuilderBoolean)
         {
-            throw new NotImplementedException("Enum on Boolean has not been implemeneted");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L("{")
+                .IndentIncrease();
+            for(int counter = 0; counter < jsonSchemaBuilderBoolean.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderBoolean.Enums.Count;
+                string enumName = jsonSchemaBuilderBoolean.Enums[counter].HasValue ? 
+                    (jsonSchemaBuilderBoolean.Enums[counter].Value ? "True" : "False") : "Null";
+                string enumValue = jsonSchemaBuilderBoolean.Enums[counter].HasValue ?
+                    (jsonSchemaBuilderBoolean.Enums[counter].Value ? "1" : "0") : "2";
+                string enumString = $"{enumName} = {enumValue}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderBoolean);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderBoolean.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderBoolean)}")
+                .EmptyLine();
         }
 
         #endregion
@@ -406,7 +455,30 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void GenerateEnumDate(CodeBuilder codeBuilder, IdentifierString key, JSBDate jsonSchemaBuilderDate)
         {
-            throw new NotImplementedException("Enum on Date has not been implemeneted");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L("{")
+                .IndentIncrease();
+            for(int counter = 0; counter < jsonSchemaBuilderDate.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderDate.Enums.Count;
+                string dateValue = jsonSchemaBuilderDate.Enums[counter] ?? "Unknown";
+                // Create valid enum name from date string (e.g., "2020-01-15" -> "Date_2020_01_15")
+                string enumName = $"Date_{MakeValidEnumName(dateValue)}";
+                string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderDate);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderDate.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDate)}")
+                .EmptyLine();
         }
 
         #endregion
@@ -425,7 +497,30 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void GenerateEnumDateTime(CodeBuilder codeBuilder, IdentifierString key, JSBDateTime jsonSchemaBuilderDateTime)
         {
-            throw new NotImplementedException("Enum for DateTime had not been implemented");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L("{")
+                .IndentIncrease();
+            for(int counter = 0; counter < jsonSchemaBuilderDateTime.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderDateTime.Enums.Count;
+                string dateTimeValue = jsonSchemaBuilderDateTime.Enums[counter] ?? "Unknown";
+                // Create valid enum name from datetime string
+                string enumName = $"DateTime_{MakeValidEnumName(dateTimeValue)}";
+                string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderDateTime);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderDateTime.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDateTime)}")
+                .EmptyLine();
         }
 
         #endregion
@@ -443,7 +538,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
             codeBuilder
                 .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
-                .L($"public MailAddress {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderEmail)}")
+                .L($"public Email {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderEmail)}")
                 .EmptyLine();
         }
 
@@ -463,7 +558,28 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void GenerateEnumInteger(CodeBuilder codeBuilder, IdentifierString key, JSBInteger jsonSchemaBuilderInteger)
         {
-            throw new NotImplementedException("Enum on integer has not been implemented");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L("{")
+                .IndentIncrease();
+            for(int counter = 0; counter < jsonSchemaBuilderInteger.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderInteger.Enums.Count;
+                string enumName = $"Value{jsonSchemaBuilderInteger.Enums[counter]?.ToString() ?? "Null"}";
+                string enumString = $"{enumName} = {jsonSchemaBuilderInteger.Enums[counter]?.ToString() ?? "0"}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderInteger);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderInteger.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderInteger)}")
+                .EmptyLine();
         }
 
         #endregion
@@ -482,7 +598,38 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void GenerateEnumNumber(CodeBuilder codeBuilder, IdentifierString key, JSBNumber jsonSchemaBuilderNumber)
         {
-            throw new NotImplementedException("Enum on number has not been implemeneted");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum : long")
+                .L("{")
+                .IndentIncrease();
+            
+            // Use dictionary to track used values and avoid collisions
+            Dictionary<long, string> usedValues = new Dictionary<long, string>();
+            
+            for(int counter = 0; counter < jsonSchemaBuilderNumber.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderNumber.Enums.Count;
+                double? value = jsonSchemaBuilderNumber.Enums[counter];
+                
+                // Use counter as the enum value to avoid collisions
+                long enumValue = counter;
+                string valueName = value.HasValue ? value.Value.ToString().Replace(".", "_").Replace("-", "Minus") : "Null";
+                string enumName = $"Value{valueName}";
+                
+                string enumString = $"{enumName} = {enumValue}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderNumber);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderNumber.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderNumber)}")
+                .EmptyLine();
         }
 
         #endregion
@@ -579,11 +726,90 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         #endregion
 
+        #region Generate Base64String
+
+        private void GenerateOrdinaryBase64String(CodeBuilder codeBuilder, IdentifierString key, JSBBase64String jsonSchemaBuilderBase64String)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderBase64String);
+
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public string {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderBase64String)}")
+                .EmptyLine();
+        }
+
+        #endregion
+
+        #region Generate Uri
+
+        private void GenerateOrdinaryUri(CodeBuilder codeBuilder, IdentifierString key, JSBUri jsonSchemaBuilderUri)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderUri);
+
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public Uri {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderUri)}")
+                .EmptyLine();
+        }
+
+        #endregion
+
+        #region Generate Guid
+
+        private void GenerateOrdinaryGuid(CodeBuilder codeBuilder, IdentifierString key, JSBGuid jsonSchemaBuilderGuid)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderGuid);
+
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public Guid {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderGuid)}")
+                .EmptyLine();
+        }
+
+        #endregion
+
+        #region Generate PhoneNumber
+
+        private void GenerateOrdinaryPhoneNumber(CodeBuilder codeBuilder, IdentifierString key, JSBPhoneNumber jsonSchemaBuilderPhoneNumber)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderPhoneNumber);
+
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public PhoneNumber {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderPhoneNumber)}")
+                .EmptyLine();
+        }
+
+        #endregion
+
         #region Generate Time
 
         private void GenerateEnumTime(CodeBuilder codeBuilder, IdentifierString key, JSBTime jsonSchemaBuilderTime)
         {
-            throw new NotImplementedException("Enum on time is not implemented");
+            codeBuilder
+                .L($"public enum {TransformToTitleCase(key)}Enum")
+                .L("{")
+                .IndentIncrease();
+            for(int counter = 0; counter < jsonSchemaBuilderTime.Enums.Count; counter += 1)
+            {
+                bool last = counter + 1 == jsonSchemaBuilderTime.Enums.Count;
+                string timeValue = jsonSchemaBuilderTime.Enums[counter] ?? "Unknown";
+                // Create valid enum name from time string
+                string enumName = $"Time_{MakeValidEnumName(timeValue)}";
+                string enumString = $"{enumName} = {counter}{(last ? "" : ",")}";
+                codeBuilder
+                    .L(enumString);
+            }
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
+            
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderTime);
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderTime.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderTime)}")
+                .EmptyLine();
         }
 
         private void GenerateOrdinaryTime(CodeBuilder codeBuilder, IdentifierString key, JSBTime jsonSchemaBuilderTime)
@@ -758,26 +984,78 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBEmail jsonSchemaBuilderEmail)
         {
-            return string.IsNullOrWhiteSpace(jsonSchemaBuilderEmail.DefaultValue) ? string.Empty : $" = new MailAddress(\"{jsonSchemaBuilderEmail.DefaultValue}\");";
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderEmail.DefaultValue) ? string.Empty : $" = new Email(\"{jsonSchemaBuilderEmail.DefaultValue}\");";
+        }
+
+        private string GenerateDefaultIfExisting(IdentifierString key, JSBUri jsonSchemaBuilderUri)
+        {
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderUri.DefaultValue) ? string.Empty : $" = new Uri(\"{jsonSchemaBuilderUri.DefaultValue}\");";
+        }
+
+        private string GenerateDefaultIfExisting(IdentifierString key, JSBGuid jsonSchemaBuilderGuid)
+        {
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderGuid.DefaultValue) ? string.Empty : $" = new Guid(\"{jsonSchemaBuilderGuid.DefaultValue}\");";
+        }
+
+        private string GenerateDefaultIfExisting(IdentifierString key, JSBPhoneNumber jsonSchemaBuilderPhoneNumber)
+        {
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderPhoneNumber.DefaultValue) ? string.Empty : $" = new PhoneNumber(\"{jsonSchemaBuilderPhoneNumber.DefaultValue}\");";
         }
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBDateTime jsonSchemaBuilderDateTime)
         {
-            return string.IsNullOrWhiteSpace(jsonSchemaBuilderDateTime.DefaultValue) ? string.Empty : $" = DateTime.Parse(\"{jsonSchemaBuilderDateTime.DefaultValue}\");";
+            if (string.IsNullOrWhiteSpace(jsonSchemaBuilderDateTime.DefaultValue))
+            {
+                return string.Empty;
+            }
+            
+            if (jsonSchemaBuilderDateTime.Enums != null && jsonSchemaBuilderDateTime.Enums.Count > 0)
+            {
+                string enumName = $"DateTime_{jsonSchemaBuilderDateTime.DefaultValue.Replace("-", "_").Replace(":", "_").Replace(".", "_").Replace(" ", "_").Replace("T", "_")}";
+                return $" = {TransformToTitleCase(key)}Enum.{enumName};";
+            }
+            return $" = DateTime.Parse(\"{jsonSchemaBuilderDateTime.DefaultValue}\");";
         }
+        
         private string GenerateDefaultIfExisting(IdentifierString key, JSBDate jsonSchemaBuilderDate)
         {
-            return string.IsNullOrWhiteSpace(jsonSchemaBuilderDate.DefaultValue) ? string.Empty : $" = DateTime.Parse(\"{jsonSchemaBuilderDate.DefaultValue}\");";
+            if (string.IsNullOrWhiteSpace(jsonSchemaBuilderDate.DefaultValue))
+            {
+                return string.Empty;
+            }
+            
+            if (jsonSchemaBuilderDate.Enums != null && jsonSchemaBuilderDate.Enums.Count > 0)
+            {
+                string enumName = $"Date_{jsonSchemaBuilderDate.DefaultValue.Replace("-", "_").Replace(":", "_").Replace(".", "_")}";
+                return $" = {TransformToTitleCase(key)}Enum.{enumName};";
+            }
+            return $" = DateTime.Parse(\"{jsonSchemaBuilderDate.DefaultValue}\");";
         }
+        
         private string GenerateDefaultIfExisting(IdentifierString key, JSBTime jsonSchemaBuilderTime)
         {
-            return string.IsNullOrWhiteSpace(jsonSchemaBuilderTime.DefaultValue) ? string.Empty : $" = DateTime.Parse(\"{jsonSchemaBuilderTime.DefaultValue}\");";
+            if (string.IsNullOrWhiteSpace(jsonSchemaBuilderTime.DefaultValue))
+            {
+                return string.Empty;
+            }
+            
+            if (jsonSchemaBuilderTime.Enums != null && jsonSchemaBuilderTime.Enums.Count > 0)
+            {
+                string enumName = $"Time_{jsonSchemaBuilderTime.DefaultValue.Replace(":", "_").Replace(".", "_")}";
+                return $" = {TransformToTitleCase(key)}Enum.{enumName};";
+            }
+            return $" = DateTime.Parse(\"{jsonSchemaBuilderTime.DefaultValue}\");";
         }
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBBoolean jsonSchemaBuilderBoolean)
         {
             if (jsonSchemaBuilderBoolean.DefaultValue.HasValue)
             {
+                if (jsonSchemaBuilderBoolean.Enums != null && jsonSchemaBuilderBoolean.Enums.Count > 0)
+                {
+                    string enumName = jsonSchemaBuilderBoolean.DefaultValue.Value ? "True" : "False";
+                    return $" = {TransformToTitleCase(key)}Enum.{enumName};";
+                }
                 string defaultValue = jsonSchemaBuilderBoolean.DefaultValue.Value ? "true" : "false";
                 return $" = {defaultValue};";
             }
@@ -791,6 +1069,10 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         {
             if (jsonSchemaBuilderInteger.DefaultValue.HasValue)
             {
+                if (jsonSchemaBuilderInteger.Enums != null && jsonSchemaBuilderInteger.Enums.Count > 0)
+                {
+                    return $" = {TransformToTitleCase(key)}Enum.Value{jsonSchemaBuilderInteger.DefaultValue.Value};";
+                }
                 return $" = {jsonSchemaBuilderInteger.DefaultValue.Value};";
             }
             else
@@ -803,6 +1085,11 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         {
             if (jsonSchemaBuilderNumber.DefaultValue.HasValue)
             {
+                if (jsonSchemaBuilderNumber.Enums != null && jsonSchemaBuilderNumber.Enums.Count > 0)
+                {
+                    string valueName = jsonSchemaBuilderNumber.DefaultValue.Value.ToString().Replace(".", "_").Replace("-", "Minus");
+                    return $" = {TransformToTitleCase(key)}Enum.Value{valueName};";
+                }
                 return $" = {jsonSchemaBuilderNumber.DefaultValue.Value};";
             }
             else
@@ -867,6 +1154,24 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private string BuildRequired(bool isRequired)
         {
             return isRequired ? string.Empty: "?";
+        }
+
+        /// <summary>
+        /// Creates a valid C# enum name from a string value by replacing special characters
+        /// </summary>
+        /// <param name="value">The value to convert to an enum name</param>
+        /// <returns>A valid enum name</returns>
+        private string MakeValidEnumName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return "Unknown";
+            }
+            return value.Replace("-", "_")
+                        .Replace(":", "_")
+                        .Replace(".", "_")
+                        .Replace(" ", "_")
+                        .Replace("T", "_");
         }
 
         #endregion

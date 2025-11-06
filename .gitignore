@@ -8,3 +8,4 @@ ModelTest/
 /JsonSchemaBuilder.Test/Funny
 JsonSchemaBuilder.Test/Default/
 /JsonSchemaBuilder.Test/JsonSchema
+JsonSchemaBuilder.Test/CSharp/

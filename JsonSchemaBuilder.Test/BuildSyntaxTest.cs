@@ -31,7 +31,7 @@ namespace JsonSchemaBuilder.Test
             bool? defaultValue = true;
             bool isRequired = false;
 
-            var varBoolean = new JSBBoolean(objectName, description, defaultValue, isRequired);
+            var varBoolean = new JSBBoolean(objectName, description, defaultValue, isRequired: isRequired);
 
             JsonSchema varSchema = varBoolean.AsJsonSchema();
         }
