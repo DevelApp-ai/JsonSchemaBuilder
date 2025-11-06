@@ -1,31 +1,32 @@
 using DevelApp.Utility.Model;
+using System;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
     /// <summary>
-    /// Convenience base64-encoded string definition in Json Schema.
+    /// Data string class to potentially replace standard string with enhanced functionality
+    /// TODO: Implement full DataString class with System.Net.Mail.MailAddress integration or other enhanced string capabilities
     /// </summary>
-    public class JSBBase64String : JSBString
+    public class JSBDataString : JSBString
     {
-        public JSBBase64String(
-                IdentifierString base64StringName,
+        public JSBDataString(
+                IdentifierString dataStringName,
                 string description,
                 string defaultValue = null,
                 bool isRequired = false)
-            : base(base64StringName,
+            : base(dataStringName,
                 description,
-                format: "byte",
                 defaultValue: defaultValue,
-                pattern: "^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$",
                 isRequired: isRequired)
         {
+            // TODO: Add enhanced data string functionality
         }
 
         public override JSBPartType PartType
         {
             get
             {
-                return JSBPartType.Base64String;
+                return JSBPartType.DataString;
             }
         }
     }

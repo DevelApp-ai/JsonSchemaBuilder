@@ -18,9 +18,13 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         IriReference = 12,
         Schema = 13,
         Time = 14,
-        Base64String = 15,
-        Uri = 16,
-        Guid = 17,
-        PhoneNumber = 18
+        DataString = 15,
+        Base64String = 16,
+        AnyOf = 17,
+        OneOf = 18,
+        AllOf = 19,
+        Uri = 20,
+        Guid = 21,
+        PhoneNumber = 22
     }
 }

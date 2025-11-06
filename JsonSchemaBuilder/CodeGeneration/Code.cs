@@ -6,6 +6,12 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 {
     public enum Code
     {
-        CSharp
+        CSharp,
+        PHP,
+        TypeScript,
+        VB,
+        Java,
+        TSQL_DDL,
+        CSharp_Entities
     }
 }
