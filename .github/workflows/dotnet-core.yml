@@ -2,7 +2,9 @@ name: .NET Core
 
 on:
   push:
-    branches: [ master ]
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
 
 jobs:
   build:
@@ -14,7 +16,7 @@ jobs:
     - name: Setup .NET Core
       uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: 3.1.301
+        dotnet-version: 8.0.x
     - name: Install dependencies
       run: dotnet restore
     - name: Build
@@ -22,7 +24,7 @@ jobs:
     - name: Test
       run: dotnet test --no-restore --verbosity normal
     - name: Publish JsonSchemaBuilder
-      uses: brandedoutcast/publish-nuget@v2.5.2
-      with:
-          PROJECT_FILE_PATH: JsonSchemaBuilder/JsonSchemaBuilder.csproj
-          NUGET_KEY: ${{secrets.NUGET_API_KEY}}
+      if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+      run: |
+        dotnet pack JsonSchemaBuilder/JsonSchemaBuilder.csproj --configuration Release --output nupkgs
+        dotnet nuget push "nupkgs/*.nupkg" --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
