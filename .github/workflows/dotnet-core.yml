@@ -173,7 +173,7 @@ jobs:
       uses: NuGet/login@v1
       id: nuget
       with:
-      # nuget.org profile name (NOT the email)
+        # nuget.org profile name (NOT the email)
         user: ${{ secrets.NUGET_USER }}
     - name: Publish to NuGet.org
       run: dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ steps.nuget.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
