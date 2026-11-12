@@ -133,6 +133,10 @@ jobs:
     name: Publish (GitHub Packages -> Release -> NuGet.org)
     runs-on: ubuntu-latest
     needs: [package, sign]
+    permissions:
+      contents: write # release creation
+      packages: write # GitHub Packages
+      id-token: write # OIDC token issuance for NuGet trusted publishing
     steps:
     - name: Download signed package
       uses: actions/download-artifact@v6
@@ -164,5 +168,23 @@ jobs:
         draft: false
         prerelease: false
         files: ./nupkgs/*.nupkg
+    - name: NuGet.org login (OIDC -> temp API key)
+      # Trusted publishing (org standard; the long-lived NUGET_API_KEY secret is
+      # gone): this job's GitHub OIDC token is exchanged for a ~1-hour nuget.org
+      # API key, validated against the trusted publishing policy registered on
+      # nuget.org for this repository + workflow:
+      #   Repository Owner: DevelApp-ai
+      #   Repository:      JsonSchemaBuilder
+      #   Workflow File:   dotnet-core.yml
+      #   Environment:     (none - this job uses no environment)
+      # NUGET_USER = the nuget.org profile name of the owning account (NOT an
+      # email address). The login runs close to the push (the temp key is
+      # short-lived). Fails loudly if the policy is not (yet) registered.
+      id: nuget-login
+      if: true
+      uses: NuGet/login@v1
+      with:
+        user: ${{ secrets.NUGET_USER }}
     - name: Publish to NuGet.org
-      run: dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      # Keyless trusted-publishing key from the login step above.
+      run: dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
