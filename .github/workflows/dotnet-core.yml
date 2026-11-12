@@ -18,6 +18,7 @@ on:
 permissions:
   contents: write
   packages: write
+  id-token: write # trusted publishing: mint the GitHub OIDC token
 
 jobs:
   build:
@@ -164,5 +165,15 @@ jobs:
         draft: false
         prerelease: false
         files: ./nupkgs/*.nupkg
+    - name: NuGet login (OIDC -> temp API key)
+      # Trusted publishing (replaces the long-lived NUGET_API_KEY secret):
+      # GitHub mints a short-lived OIDC token, nuget.org validates it against
+      # this repo's registered trusted-publishing policy and returns a ~1h
+      # API key. Login once, immediately before the push.
+      uses: NuGet/login@v1
+      id: nuget
+      with:
+      # nuget.org profile name (NOT the email)
+        user: ${{ secrets.NUGET_USER }}
     - name: Publish to NuGet.org
-      run: dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ secrets.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
+      run: dotnet nuget push ./nupkgs/*.nupkg --api-key ${{ steps.nuget.outputs.NUGET_API_KEY }} --source https://api.nuget.org/v3/index.json --skip-duplicate
