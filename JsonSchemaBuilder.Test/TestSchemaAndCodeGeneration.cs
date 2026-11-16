@@ -25,6 +25,47 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void BuildFromAssemblyEntities()
+        {
+            string pathString = ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar;
+            string assemblyPath = GetType().Assembly.Location;
+            string pathStringExpanded = Path.GetFullPath(pathString, assemblyPath);
+            string jsonSchemaApplicationRoot = Path.Combine(pathStringExpanded, "JsonSchema");
+            LoadAllJsonSchemaBuildersAndWriteSchemasToFile(jsonSchemaApplicationRoot);
+            string applicationRoot = Path.Combine(pathStringExpanded, "CSharpEntities");
+            LoadAllJsonSchemaBuildersAndGenerateCSharpEntitiesCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
+        }
+
+        [Fact]
+        public void TestCSharpEntitiesCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.CSharp_Entities);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.cs"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated entities code for CompositionTest.cs");
+            //Entity classes keep the class and property structure of the serialization classes
+            Assert.Contains("public partial class CompositionTest", compositionTest.code);
+            Assert.Contains("public partial class Combined", compositionTest.code);
+            Assert.Contains("public Combined CombinedProp { get; set; }", compositionTest.code);
+            Assert.Contains("public object AnyChoice { get; set; }", compositionTest.code);
+            //Serialization specifics are removed for Code First entities
+            Assert.DoesNotContain("JsonProperty", compositionTest.code);
+            Assert.DoesNotContain("Newtonsoft", compositionTest.code);
+            Assert.DoesNotContain("Ardalis", compositionTest.code);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated entities code for StringEnumAsTopPart.cs");
+            //Enums are kept as plain C# enums without the JsonConverter attribute
+            Assert.Contains("public enum MyTopPartStringEnum", stringEnum.code);
+            Assert.Contains("public MyTopPartStringEnum MyTopPartString { get; set; }", stringEnum.code);
+            Assert.DoesNotContain("JsonConverter", stringEnum.code);
+            Assert.DoesNotContain("JsonProperty", stringEnum.code);
+        }
+
+        [Fact]
         public void TestCompositionCSharpCodeGeneration()
         {
             CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
@@ -73,6 +114,21 @@ namespace JsonSchemaBuilder.Test
                 codeGenerator.Register(jsonSchema);
             }
             codeGenerator.GenerateToFile(Code.CSharp);
+        }
+
+        private static void LoadAllJsonSchemaBuildersAndGenerateCSharpEntitiesCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
+        {
+            if (Directory.Exists(applicationRoot))
+            {
+                Directory.Delete(applicationRoot, true);
+            }
+            CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
+            foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
+            {
+                IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
+                codeGenerator.Register(jsonSchema);
+            }
+            codeGenerator.GenerateToFile(Code.CSharp_Entities);
         }
 
         private static void LoadAllJsonSchemaBuildersAndWriteSchemasToFile(string jsonSchemaApplicationRoot)

@@ -66,7 +66,10 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
             else
             {
-                JsonSchema returnSchema = JsonSchema.Empty;
+                //A fresh instance is used instead of the JsonSchema.Empty singleton so that
+                //setting the Id below does not mutate the shared static schema instance,
+                //which would add a duplicate $id on every schema built after the first
+                JsonSchema returnSchema = new JsonSchema();
                 returnSchema.Id(Name);
                 returnSchema.Schema("http://json-schema.org/draft-07/schema#");
                 returnSchema.Title(Name);
