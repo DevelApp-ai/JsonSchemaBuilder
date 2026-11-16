@@ -155,6 +155,27 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                         DoReferenceResolution(property, module);
                     }
                     break;
+                case JSBPartType.AllOf:
+                    JSBAllOf jsonSchemaBuilderAllOf = jsonSchemaBuilderPart as JSBAllOf;
+                    foreach (IJSBPart subSchema in jsonSchemaBuilderAllOf.Schemas)
+                    {
+                        DoReferenceResolution(subSchema, module);
+                    }
+                    break;
+                case JSBPartType.AnyOf:
+                    JSBAnyOf jsonSchemaBuilderAnyOf = jsonSchemaBuilderPart as JSBAnyOf;
+                    foreach (IJSBPart subSchema in jsonSchemaBuilderAnyOf.Schemas)
+                    {
+                        DoReferenceResolution(subSchema, module);
+                    }
+                    break;
+                case JSBPartType.OneOf:
+                    JSBOneOf jsonSchemaBuilderOneOf = jsonSchemaBuilderPart as JSBOneOf;
+                    foreach (IJSBPart subSchema in jsonSchemaBuilderOneOf.Schemas)
+                    {
+                        DoReferenceResolution(subSchema, module);
+                    }
+                    break;
                 default:
                     break;
             }
