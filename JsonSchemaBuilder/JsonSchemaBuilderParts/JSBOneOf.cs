@@ -7,7 +7,7 @@ using System.Linq;
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
     /// <summary>
-    /// AnyOf schema composition - validates against exactly one of the specified schemas
+    /// OneOf schema composition - validates against exactly one of the specified schemas
     /// </summary>
     public class JSBOneOf : IJSBPart
     {
