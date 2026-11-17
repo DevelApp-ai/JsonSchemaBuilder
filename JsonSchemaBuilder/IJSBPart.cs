@@ -1,6 +1,7 @@
 ﻿using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
 using Manatee.Json.Schema;
+using System.Collections.Generic;
 
 namespace DevelApp.JsonSchemaBuilder
 {
@@ -31,5 +32,11 @@ namespace DevelApp.JsonSchemaBuilder
         /// Returns the PartType of the JsonSchemaPart
         /// </summary>
         JSBPartType PartType { get; }
+
+        /// <summary>
+        /// Definitions carried by this part. Emitted as definitions in the JSON schema
+        /// of the part so definitions are supported on other levels than the top schema
+        /// </summary>
+        Dictionary<string, IJSBPart> Definitions { get; }
     }
 }

@@ -574,6 +574,25 @@ namespace JsonSchemaBuilder.Test
             Assert.Contains("[JsonProperty(\"myTopPartString\"), JsonConverter(typeof(StringEnumConverter))]", stringEnum.code);
         }
 
+        [Fact]
+        public void TestCSharpNestedDefinitionsCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new NestedDefinitionsAsATopPartJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.CSharp);
+
+            (string fileName, string code) nestedDefinitions = generated.FirstOrDefault(g => g.fileName.EndsWith("NestedDefinitionsAsATopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(nestedDefinitions.code), "Expected generated code for NestedDefinitionsAsATopPart.cs");
+            //The schema is emitted as the top part class
+            Assert.Contains("public partial class NestedDefinitionsAsATopPart", nestedDefinitions.code);
+            Assert.Contains("public string PlainProperty { get; set; }", nestedDefinitions.code);
+            //The nested references resolve all the way to the innermost string definitions
+            Assert.Contains("[JsonProperty(\"refToNested\")]", nestedDefinitions.code);
+            Assert.Contains("public string RefToNested { get; set; }", nestedDefinitions.code);
+            Assert.Contains("[JsonProperty(\"refToSchemaLevelNested\")]", nestedDefinitions.code);
+            Assert.Contains("public string RefToSchemaLevelNested { get; set; }", nestedDefinitions.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -1312,6 +1331,53 @@ namespace JsonSchemaBuilder.Test
             get
             {
                 return "Default";
+            }
+        }
+    }
+
+    public class NestedDefinitionsAsATopPartJsonSchema : AbstractJsonSchema
+    {
+        protected override JSBSchema BuildJsonSchema()
+        {
+            //A definition on the schema level that itself carries a nested definition
+            JSBString deeperDefinition = new JSBString("DeeperDefinition", "Innermost schema level definition", maxLength: 64);
+            List<IJSBPart> outerProps = new List<IJSBPart>();
+            outerProps.Add(new JSBString("OuterValue", "A value in the schema level definition", maxLength: 64, isRequired: true));
+            JSBObject outerDefinition = new JSBObject("OuterDefinition", "Schema level definition carrying a nested definition", props: outerProps,
+                defs: new List<IJSBPart>() { deeperDefinition });
+
+            //A definition carried by a property object that itself carries a nested definition
+            JSBString innerDefinition = new JSBString("InnerDefinition", "Innermost property level definition", maxLength: 64);
+            List<IJSBPart> middleProps = new List<IJSBPart>();
+            middleProps.Add(new JSBString("Value", "A value in the middle definition", maxLength: 64, isRequired: true));
+            JSBObject middleDefinition = new JSBObject("MiddleDefinition", "Property level definition carrying a nested definition", props: middleProps,
+                defs: new List<IJSBPart>() { innerDefinition });
+
+            List<IJSBPart> props = new List<IJSBPart>();
+            props.Add(new JSBString("PlainProperty", "A plain property", maxLength: 100, isRequired: true));
+            props.Add(new JSBObject("NestedHolder", "Object property", props: new List<IJSBPart>() { new JSBString("HeldValue", "A value in the nested object", maxLength: 64) }));
+            props.Add(new JSBRef("RefToNested", "References the nested inner definition", iriReference: new Uri("#/definitions/middleDefinition/definitions/innerDefinition", UriKind.Relative), isRequired: true));
+            props.Add(new JSBRef("RefToSchemaLevelNested", "References the nested deeper definition on the schema level", iriReference: new Uri("#/definitions/outerDefinition/definitions/deeperDefinition", UriKind.Relative), isRequired: true));
+            JSBObject objectPart = new JSBObject("NestedDefinitionsAsATopPart", "Used to test definitions on other levels than the top schema", props: props,
+                defs: new List<IJSBPart>() { middleDefinition });
+
+            return new JSBSchema("NestedDefinitionsAsATopPart", Description, topPart: objectPart,
+                defs: new List<IJSBPart>() { outerDefinition });
+        }
+
+        public override string Description
+        {
+            get
+            {
+                return "Used to test definitions on other levels than the top schema";
+            }
+        }
+
+        public override NamespaceString Module
+        {
+            get
+            {
+                return "Funny.Onion";
             }
         }
     }

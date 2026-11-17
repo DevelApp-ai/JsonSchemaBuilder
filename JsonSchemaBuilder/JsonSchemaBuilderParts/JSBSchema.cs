@@ -39,7 +39,8 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public Dictionary<string, IJSBPart> Definitions { get; } = new Dictionary<string, IJSBPart>();
+        //Definitions is inherited from AbstractJSBPart so definitions are supported
+        //on other levels than the top schema. The schema level Definitions is the root level
 
         public IJSBPart TopPart { get; }
 

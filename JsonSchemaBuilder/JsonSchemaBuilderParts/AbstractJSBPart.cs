@@ -62,6 +62,12 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 
         public List<T> Enums { get; }
 
+        /// <summary>
+        /// Definitions carried by this part. Emitted as definitions in the JSON schema
+        /// of the part so definitions are supported on other levels than the top schema
+        /// </summary>
+        public Dictionary<string, IJSBPart> Definitions { get; } = new Dictionary<string, IJSBPart>();
+
         public abstract JSBPartType PartType { get; }
 
         public abstract JsonSchema AsJsonSchema();
@@ -89,6 +95,12 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                     enumsOut.Add(TAsJsonValue(item));
                 }
                 returnSchema.Enum(enumsOut.ToArray());
+            }
+            //Add definitions carried by this part so definitions are supported
+            //on other levels than the top schema
+            foreach (var pair in Definitions)
+            {
+                returnSchema.Definition(pair.Key, pair.Value.AsJsonSchema());
             }
 
             return returnSchema;

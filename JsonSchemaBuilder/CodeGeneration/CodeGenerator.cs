@@ -3,7 +3,6 @@ using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
 using Manatee.Json;
 using Manatee.Json.Schema;
-using Manatee.Json.Serialization;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -80,6 +79,12 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private void DoReferenceResolution(IJSBPart jsonSchemaBuilderPart, NamespaceString module)
         {
+            //Walk definitions carried by any part so definitions on other levels
+            //than the top schema get reference resolution as well
+            foreach (IJSBPart definition in jsonSchemaBuilderPart.Definitions.Values)
+            {
+                DoReferenceResolution(definition, module);
+            }
             switch (jsonSchemaBuilderPart.PartType)
             {
                 case JSBPartType.IriReference:
@@ -133,11 +138,8 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     }
                     break;
                 case JSBPartType.Schema:
+                    //Definitions of the schema part are walked by the shared walk above
                     JSBSchema jsonSchemaBuilderSchema = jsonSchemaBuilderPart as JSBSchema;
-                    foreach (IJSBPart definition in jsonSchemaBuilderSchema.Definitions.Values)
-                    {
-                        DoReferenceResolution(definition, module);
-                    }
                     if (jsonSchemaBuilderSchema.TopPart != null)
                     {
                         DoReferenceResolution(jsonSchemaBuilderSchema.TopPart, module);
@@ -234,8 +236,8 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 if (jSBRef.Fragment.ToLowerInvariant().StartsWith("/definitions/"))
                 {
-                    string definitionKey = TransformToTitleCase(jSBRef.Fragment.Substring("/definitions/".Length));
-                    if (jsonSchemaDefinition.JsonSchemaBuilderSchema.Definitions.TryGetValue(definitionKey, out IJSBPart referencedPart))
+                    IJSBPart referencedPart = LookupReferencedPartFromDefinitions(jsonSchemaDefinition.JsonSchemaBuilderSchema, jSBRef.Fragment);
+                    if (referencedPart != null)
                     {
                         return (referencedPart, null);
                     }
@@ -268,24 +270,70 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             }
             else if (jSBRef.Fragment.ToLowerInvariant().StartsWith("/definitions/"))
             {
-                //TODO Avoid serialization step
-                JsonSerializer jsonSerializer = new JsonSerializer();
-                JsonSchema jsonSchema = jsonSerializer.Deserialize<JsonSchema>(jsonValueOfSchema);
-                string afterDefinitions = jSBRef.Fragment.ToLowerInvariant().Replace("/definitions/", "");
-                if (jsonSchema.Definitions() != null && jsonSchema.Definitions().TryGetValue(afterDefinitions, out JsonSchema subSchema))
+                //Walk the raw schema json so nested definition paths like
+                //#/definitions/outer/definitions/inner resolve as well
+                string[] segments = jSBRef.Fragment.Split(new[] { "/definitions/" }, StringSplitOptions.RemoveEmptyEntries);
+                JsonValue currentSchemaValue = jsonValueOfSchema;
+                foreach (string segment in segments)
                 {
-                    //Process subschema Json
-                    return (null, subSchema.ToJson(jsonSerializer));
+                    string definitionKey = TransformToTitleCase(segment);
+                    if (currentSchemaValue.Type == JsonValueType.Object
+                        && currentSchemaValue.Object.TryGetValue("definitions", out JsonValue definitionsValue)
+                        && definitionsValue.Type == JsonValueType.Object
+                        && (definitionsValue.Object.TryGetValue(segment, out JsonValue definitionValue)
+                            || definitionsValue.Object.TryGetValue(definitionKey, out definitionValue)))
+                    {
+                        currentSchemaValue = definitionValue;
+                    }
+                    else
+                    {
+                        throw new CodeGenerationException($"Could not find {segment} in the definitions of the schema");
+                    }
                 }
-                else
-                {
-                    throw new CodeGenerationException($"Could not find {afterDefinitions} in the definitions of the schema");
-                }
+                return (null, currentSchemaValue);
             }
             else
             {
                 throw new NotImplementedException($"Uri reference is not supported other than /definitions/ or entire schema");
             }
+        }
+
+        /// <summary>
+        /// Resolves a /definitions/ fragment against a registered schema, including nested
+        /// definition paths like #/definitions/outer/definitions/inner now that parts can
+        /// carry definitions on other levels than the top schema. The first segment can
+        /// resolve against the schema definitions or against the definitions of the top
+        /// part since the top part is the root of the emitted schema. Returns null when
+        /// the fragment cannot be resolved
+        /// </summary>
+        /// <param name="schema"></param>
+        /// <param name="fragment"></param>
+        /// <returns></returns>
+        public IJSBPart LookupReferencedPartFromDefinitions(JSBSchema schema, string fragment)
+        {
+            string[] segments = fragment.Split(new[] { "/definitions/" }, StringSplitOptions.RemoveEmptyEntries);
+            IJSBPart currentPart = schema;
+            foreach (string segment in segments)
+            {
+                string definitionKey = TransformToTitleCase(segment);
+                IJSBPart nextPart = null;
+                if (!currentPart.Definitions.TryGetValue(definitionKey, out nextPart)
+                    && ReferenceEquals(currentPart, schema)
+                    && schema.TopPart != null)
+                {
+                    schema.TopPart.Definitions.TryGetValue(definitionKey, out nextPart);
+                }
+                if (nextPart == null)
+                {
+                    return null;
+                }
+                currentPart = nextPart;
+            }
+            if (ReferenceEquals(currentPart, schema))
+            {
+                return null;
+            }
+            return currentPart;
         }
 
         /// <summary>

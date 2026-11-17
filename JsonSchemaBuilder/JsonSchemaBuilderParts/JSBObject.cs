@@ -10,9 +10,10 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
     /// </summary>
     public class JSBObject : AbstractJSBPart<JsonValue>
     {
-        public JSBObject(IdentifierString objectName, string description, 
-            List<IJSBPart> props = null, bool isRequired = false, 
-            JsonValue defaultValue = null, List<JsonValue> examples = null, List<JsonValue> enums = null, bool isExpandable = false)
+        public JSBObject(IdentifierString objectName, string description,
+            List<IJSBPart> props = null, bool isRequired = false,
+            JsonValue defaultValue = null, List<JsonValue> examples = null, List<JsonValue> enums = null, bool isExpandable = false,
+            List<IJSBPart> defs = null)
             : base(objectName, description, isRequired, defaultValue: defaultValue, examples: examples, enums: enums)
         {
             if (props != null)
@@ -20,6 +21,13 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 foreach(IJSBPart part in props)
                 {
                     Properties.Add(part.Name, part);
+                }
+            }
+            if (defs != null)
+            {
+                foreach (IJSBPart part in defs)
+                {
+                    Definitions.Add(part.Name, part);
                 }
             }
             IsExpandable = isExpandable;

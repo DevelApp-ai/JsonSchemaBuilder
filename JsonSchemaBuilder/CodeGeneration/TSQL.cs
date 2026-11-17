@@ -281,8 +281,10 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 if (jSBRef.Fragment.ToLowerInvariant().StartsWith("/definitions/"))
                 {
-                    string definitionKey = _codeGenerator.TransformToTitleCase(jSBRef.Fragment.Substring("/definitions/".Length));
-                    if (registeredSchema.JsonSchemaBuilderSchema.Definitions.TryGetValue(definitionKey, out IJSBPart definitionPart))
+                    //Shared resolution supports nested definition paths like
+                    //#/definitions/outer/definitions/inner as well
+                    IJSBPart definitionPart = _codeGenerator.LookupReferencedPartFromDefinitions(registeredSchema.JsonSchemaBuilderSchema, jSBRef.Fragment);
+                    if (definitionPart != null)
                     {
                         return (definitionPart, null);
                     }
