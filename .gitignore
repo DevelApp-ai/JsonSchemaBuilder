@@ -10,3 +10,4 @@ JsonSchemaBuilder.Test/Default/
 /JsonSchemaBuilder.Test/JsonSchema
 JsonSchemaBuilder.Test/CSharp/
 JsonSchemaBuilder.Test/CSharpEntities/
+JsonSchemaBuilder.Test/TypeScript/

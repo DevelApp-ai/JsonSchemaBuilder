@@ -37,6 +37,18 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void BuildFromAssemblyTypeScript()
+        {
+            string pathString = ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar;
+            string assemblyPath = GetType().Assembly.Location;
+            string pathStringExpanded = Path.GetFullPath(pathString, assemblyPath);
+            string jsonSchemaApplicationRoot = Path.Combine(pathStringExpanded, "JsonSchema");
+            LoadAllJsonSchemaBuildersAndWriteSchemasToFile(jsonSchemaApplicationRoot);
+            string applicationRoot = Path.Combine(pathStringExpanded, "TypeScript");
+            LoadAllJsonSchemaBuildersAndGenerateTypeScriptCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
+        }
+
+        [Fact]
         public void TestCSharpEntitiesCodeGeneration()
         {
             CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
@@ -98,6 +110,55 @@ namespace JsonSchemaBuilder.Test
             Assert.Equal(1, sharedValueCount);
         }
 
+        [Fact]
+        public void TestTypeScriptCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            codeGenerator.Register(new WorkflowDefinitionJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.TypeScript);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.ts"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated TypeScript code for CompositionTest.ts");
+
+            //AllOf merges the properties of all object subschemas into one interface
+            Assert.Contains("export interface CompositionTest", compositionTest.code);
+            Assert.Contains("export interface Combined", compositionTest.code);
+            Assert.Contains("combined?: Combined;", compositionTest.code);
+            //AnyOf and OneOf map to object since the subschema choice cannot be expressed
+            Assert.Contains("anyChoice?: object;", compositionTest.code);
+            Assert.Contains("oneChoice?: object;", compositionTest.code);
+            //An array of AllOf parts uses the merged interface as item type
+            Assert.Contains("combinedArray?: Combined[];", compositionTest.code);
+            Assert.Contains("name: string;", compositionTest.code);
+            Assert.Contains("count?: number;", compositionTest.code);
+            //A property name present in several subschemas is only emitted once
+            int sharedValueCount = 0;
+            int indexOfSharedValue = compositionTest.code.IndexOf("sharedValue: string;", StringComparison.Ordinal);
+            while (indexOfSharedValue != -1)
+            {
+                sharedValueCount += 1;
+                indexOfSharedValue = compositionTest.code.IndexOf("sharedValue: string;", indexOfSharedValue + 1, StringComparison.Ordinal);
+            }
+            Assert.Equal(1, sharedValueCount);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.ts"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated TypeScript code for StringEnumAsTopPart.ts");
+            //Enums on value parts become string literal union types
+            Assert.Contains("export type MyTopPartStringEnum = 'Monster' | 'item' | 'Nusense';", stringEnum.code);
+            Assert.Contains("myTopPartString?: MyTopPartStringEnum;", stringEnum.code);
+
+            (string fileName, string code) workflowDefinition = generated.FirstOrDefault(g => g.fileName.EndsWith("WorkflowDefinition.ts"));
+            Assert.False(string.IsNullOrEmpty(workflowDefinition.code), "Expected generated TypeScript code for WorkflowDefinition.ts");
+            //Objects in arrays are emitted as their own interfaces
+            Assert.Contains("export interface WorkflowDefinition", workflowDefinition.code);
+            Assert.Contains("nodes: Node[];", workflowDefinition.code);
+            Assert.Contains("edges: Edge[];", workflowDefinition.code);
+            Assert.Contains("export interface Node", workflowDefinition.code);
+            Assert.Contains("export interface Edge", workflowDefinition.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -129,6 +190,21 @@ namespace JsonSchemaBuilder.Test
                 codeGenerator.Register(jsonSchema);
             }
             codeGenerator.GenerateToFile(Code.CSharp_Entities);
+        }
+
+        private static void LoadAllJsonSchemaBuildersAndGenerateTypeScriptCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
+        {
+            if (Directory.Exists(applicationRoot))
+            {
+                Directory.Delete(applicationRoot, true);
+            }
+            CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
+            foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
+            {
+                IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
+                codeGenerator.Register(jsonSchema);
+            }
+            codeGenerator.GenerateToFile(Code.TypeScript);
         }
 
         private static void LoadAllJsonSchemaBuildersAndWriteSchemasToFile(string jsonSchemaApplicationRoot)
