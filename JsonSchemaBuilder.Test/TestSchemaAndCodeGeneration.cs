@@ -61,6 +61,18 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void BuildFromAssemblyVB()
+        {
+            string pathString = ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar;
+            string assemblyPath = GetType().Assembly.Location;
+            string pathStringExpanded = Path.GetFullPath(pathString, assemblyPath);
+            string jsonSchemaApplicationRoot = Path.Combine(pathStringExpanded, "JsonSchema");
+            LoadAllJsonSchemaBuildersAndWriteSchemasToFile(jsonSchemaApplicationRoot);
+            string applicationRoot = Path.Combine(pathStringExpanded, "VB");
+            LoadAllJsonSchemaBuildersAndGenerateVBCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
+        }
+
+        [Fact]
         public void TestCSharpEntitiesCodeGeneration()
         {
             CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
@@ -229,6 +241,65 @@ namespace JsonSchemaBuilder.Test
             Assert.Contains("class Edge", workflowDefinition.code);
         }
 
+        [Fact]
+        public void TestVBCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            codeGenerator.Register(new WorkflowDefinitionJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.VB);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.vb"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated VB code for CompositionTest.vb");
+
+            //AllOf merges the properties of all object subschemas into one class
+            Assert.Contains("Imports Newtonsoft.Json", compositionTest.code);
+            //VB reserved word namespace segments are escaped with brackets
+            Assert.Contains("Namespace [Default]", compositionTest.code);
+            Assert.Contains("Partial Public Class CompositionTest", compositionTest.code);
+            Assert.Contains("Partial Public Class Combined", compositionTest.code);
+            //The AllOf part itself becomes a property pointing at the merged class
+            Assert.Contains("Public Property CombinedProp As Combined", compositionTest.code);
+            //AnyOf and OneOf map to object since VB has no union type
+            Assert.Contains("Public Property AnyChoice As Object", compositionTest.code);
+            Assert.Contains("Public Property OneChoice As Object", compositionTest.code);
+            //An array of AllOf parts uses the merged class as item type
+            Assert.Contains("Public Property CombinedArray As List(Of Combined)", compositionTest.code);
+            Assert.Contains("Public Property Name As String", compositionTest.code);
+            //Value types are nullable when the part is not required
+            Assert.Contains("Public Property Count As Long?", compositionTest.code);
+            //A property name present in several subschemas is only emitted once
+            int sharedValueCount = 0;
+            int indexOfSharedValue = compositionTest.code.IndexOf("Public Property SharedValue As String", StringComparison.Ordinal);
+            while (indexOfSharedValue != -1)
+            {
+                sharedValueCount += 1;
+                indexOfSharedValue = compositionTest.code.IndexOf("Public Property SharedValue As String", indexOfSharedValue + 1, StringComparison.Ordinal);
+            }
+            Assert.Equal(1, sharedValueCount);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.vb"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated VB code for StringEnumAsTopPart.vb");
+            //Enums on string parts become VB enums serialized with StringEnumConverter
+            Assert.Contains("Namespace Funny.Onion", stringEnum.code);
+            Assert.Contains("Public Enum MyTopPartStringEnum", stringEnum.code);
+            Assert.Contains("Monster", stringEnum.code);
+            Assert.Contains("Item", stringEnum.code);
+            Assert.Contains("Nusense", stringEnum.code);
+            Assert.Contains("<JsonProperty(\"myTopPartString\"), JsonConverter(GetType(StringEnumConverter))>", stringEnum.code);
+            Assert.Contains("Public Property MyTopPartString As MyTopPartStringEnum", stringEnum.code);
+
+            (string fileName, string code) workflowDefinition = generated.FirstOrDefault(g => g.fileName.EndsWith("WorkflowDefinition.vb"));
+            Assert.False(string.IsNullOrEmpty(workflowDefinition.code), "Expected generated VB code for WorkflowDefinition.vb");
+            //Objects in arrays are emitted as their own classes
+            Assert.Contains("Partial Public Class WorkflowDefinition", workflowDefinition.code);
+            Assert.Contains("Public Property Nodes As List(Of Node)", workflowDefinition.code);
+            Assert.Contains("Public Property Edges As List(Of Edge)", workflowDefinition.code);
+            Assert.Contains("Partial Public Class Node", workflowDefinition.code);
+            Assert.Contains("Partial Public Class Edge", workflowDefinition.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -290,6 +361,21 @@ namespace JsonSchemaBuilder.Test
                 codeGenerator.Register(jsonSchema);
             }
             codeGenerator.GenerateToFile(Code.PHP);
+        }
+
+        private static void LoadAllJsonSchemaBuildersAndGenerateVBCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
+        {
+            if (Directory.Exists(applicationRoot))
+            {
+                Directory.Delete(applicationRoot, true);
+            }
+            CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
+            foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
+            {
+                IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
+                codeGenerator.Register(jsonSchema);
+            }
+            codeGenerator.GenerateToFile(Code.VB);
         }
 
         private static void LoadAllJsonSchemaBuildersAndWriteSchemasToFile(string jsonSchemaApplicationRoot)
