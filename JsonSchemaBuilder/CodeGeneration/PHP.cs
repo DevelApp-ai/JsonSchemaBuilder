@@ -24,8 +24,9 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
     /// - AllOf merges all object subschemas into one class
     /// - AnyOf/OneOf map to object since the runtime shape is not fixed
     /// - Date, DateTime and Time map to DateTimeImmutable since PHP has no
-    ///   date only value object. Email, PhoneNumber, Guid, Uri and
-    ///   Base64String map to string since PHP has no built-in equivalents
+    ///   date only value object. Email, PhoneNumber, Guid, Uri,
+    ///   Base64String and DataString map to string since PHP has no
+    ///   built-in equivalents
     /// - References to the top level type of another registered schema use the
     ///   referenced class and import it with a use statement when it lives in
     ///   another module
@@ -372,6 +373,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 case JSBPartType.String:
                 case JSBPartType.Email:
                 case JSBPartType.Base64String:
+                case JSBPartType.DataString:
                 case JSBPartType.Uri:
                 case JSBPartType.Guid:
                 case JSBPartType.PhoneNumber:

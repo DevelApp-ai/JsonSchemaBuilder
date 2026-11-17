@@ -4,8 +4,9 @@ using System;
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
     /// <summary>
-    /// Data string class to potentially replace standard string with enhanced functionality
-    /// TODO: Implement full DataString class with System.Net.Mail.MailAddress integration or other enhanced string capabilities
+    /// Data string part that maps to the DataTypes.DataString value object with included
+    /// handling of the string limitations (minLength, maxLength, pattern), so the limitations
+    /// are both emitted to the schema and carried by the generated C# and VB code.
     /// </summary>
     public class JSBDataString : JSBString
     {
@@ -13,13 +14,20 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 IdentifierString dataStringName,
                 string description,
                 string defaultValue = null,
-                bool isRequired = false)
+                bool isRequired = false,
+                string format = null,
+                uint minLength = 0,
+                uint? maxLength = null,
+                string pattern = null)
             : base(dataStringName,
                 description,
+                format: format,
+                minLength: minLength,
+                maxLength: maxLength,
+                pattern: pattern,
                 defaultValue: defaultValue,
                 isRequired: isRequired)
         {
-            // TODO: Add enhanced data string functionality
         }
 
         public override JSBPartType PartType

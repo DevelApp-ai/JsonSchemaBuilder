@@ -449,6 +449,47 @@ namespace JsonSchemaBuilder.Test
             Assert.Contains("[SourceFileName] NVARCHAR(MAX) NOT NULL", ftpInformation.code);
         }
 
+        [Fact]
+        public void TestDataStringCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new DataStringAsTopPartJsonSchema());
+
+            List<(string fileName, string code)> csharpCode = codeGenerator.Generate(Code.CSharp);
+            (string fileName, string code) dataStringCSharp = csharpCode.Single(g => g.fileName.EndsWith("DataStringAsTopPart.cs"));
+            //CSharp maps the DataString part to the DataString value object with its limitations
+            Assert.Contains("public DataString MyTopPartDataString", dataStringCSharp.code);
+            Assert.Contains("new DataString(\"abc123\")", dataStringCSharp.code);
+
+            List<(string fileName, string code)> entitiesCode = codeGenerator.Generate(Code.CSharp_Entities);
+            (string fileName, string code) dataStringEntities = entitiesCode.Single(g => g.fileName.EndsWith("DataStringAsTopPart.cs"));
+            //Entities keep the DataString value object, only the serialization specifics are removed
+            Assert.Contains("public DataString MyTopPartDataString", dataStringEntities.code);
+            Assert.DoesNotContain("[JsonProperty", dataStringEntities.code);
+
+            List<(string fileName, string code)> typeScriptCode = codeGenerator.Generate(Code.TypeScript);
+            (string fileName, string code) dataStringTypeScript = typeScriptCode.Single(g => g.fileName.EndsWith("DataStringAsTopPart.ts"));
+            Assert.Contains("myTopPartDataString?: string", dataStringTypeScript.code);
+
+            List<(string fileName, string code)> phpCode = codeGenerator.Generate(Code.PHP);
+            (string fileName, string code) dataStringPhp = phpCode.Single(g => g.fileName.EndsWith("DataStringAsTopPart.php"));
+            Assert.Contains("public ?string $myTopPartDataString", dataStringPhp.code);
+
+            List<(string fileName, string code)> vbCode = codeGenerator.Generate(Code.VB);
+            (string fileName, string code) dataStringVb = vbCode.Single(g => g.fileName.EndsWith("DataStringAsTopPart.vb"));
+            Assert.Contains("Public Property MyTopPartDataString As DataString", dataStringVb.code);
+
+            List<(string fileName, string code)> javaCode = codeGenerator.Generate(Code.Java);
+            (string fileName, string code) dataStringJava = javaCode.Single(g => g.fileName.EndsWith("DataStringAsTopPart.java"));
+            Assert.Contains("private String myTopPartDataString", dataStringJava.code);
+
+            List<(string fileName, string code)> tsqlCode = codeGenerator.Generate(Code.TSQL_DDL);
+            (string fileName, string code) dataStringTsql = tsqlCode.Single(g => g.fileName.EndsWith("DataStringAsTopPart.sql"));
+            //The limitations become column size, CHECK constraints and DEFAULT
+            Assert.Contains("[MyTopPartDataString] NVARCHAR(10) NULL DEFAULT N'abc123'", dataStringTsql.code);
+            Assert.Contains("CHECK (LEN([MyTopPartDataString]) >= 3)", dataStringTsql.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -904,6 +945,33 @@ namespace JsonSchemaBuilder.Test
             JSBEmail emailPart = new JSBEmail("MyTopPartEmail", "TopPart", defaultValue: "riger@support.com");
 
             return new JSBSchema("EmailAsATopPart", Description, topPart: emailPart);
+        }
+    }
+
+    public class DataStringAsTopPartJsonSchema : AbstractJsonSchema
+    {
+        public override NamespaceString Module
+        {
+            get
+            {
+                return "Funny.Onion";
+            }
+        }
+
+        public override string Description
+        {
+            get
+            {
+                return "Used to test data string as a top part";
+            }
+        }
+
+        protected override JSBSchema BuildJsonSchema()
+        {
+            JSBDataString dataStringPart = new JSBDataString("MyTopPartDataString", "TopPart", defaultValue: "abc123",
+                minLength: 3, maxLength: 10, pattern: "^[a-z0-9]+$");
+
+            return new JSBSchema("DataStringAsATopPart", Description, topPart: dataStringPart);
         }
     }
 

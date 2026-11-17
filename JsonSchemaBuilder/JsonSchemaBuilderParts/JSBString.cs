@@ -51,11 +51,6 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             JsonSchema returnSchema = InitialJsonSchema()
                 .Type(JsonSchemaType.String);
 
-            if (string.IsNullOrWhiteSpace(Format))
-            {
-                returnSchema.Format(Format);
-            }
-
             if (MinLength > 0)
             {
                 returnSchema.MinLength(MinLength);

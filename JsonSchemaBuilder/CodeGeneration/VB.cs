@@ -181,6 +181,17 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                         GenerateOrdinaryEmail(codeBuilder, key, jsonSchemaBuilderEmail);
                     }
                     break;
+                case JSBPartType.DataString:
+                    JSBDataString jsonSchemaBuilderDataString = value as JSBDataString;
+                    if (jsonSchemaBuilderDataString.Enums != null && jsonSchemaBuilderDataString.Enums.Count > 0)
+                    {
+                        GenerateEnumString(codeBuilder, key, jsonSchemaBuilderDataString, isDefinition);
+                    }
+                    else
+                    {
+                        GenerateOrdinaryDataString(codeBuilder, key, jsonSchemaBuilderDataString);
+                    }
+                    break;
                 case JSBPartType.Integer:
                     JSBInteger jsonSchemaBuilderInteger = value as JSBInteger;
                     if (jsonSchemaBuilderInteger.Enums != null && jsonSchemaBuilderInteger.Enums.Count > 0)
@@ -339,6 +350,13 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     return "Date";
                 case JSBPartType.Email:
                     return "Email";
+                case JSBPartType.DataString:
+                    JSBString dataStringItem = jsonSchemaBuilderPart as JSBString;
+                    if (dataStringItem.Enums.Count > 0)
+                    {
+                        return EscapeIdentifier(jsonSchemaBuilderPart.Name + "Enum");
+                    }
+                    return "DataString";
                 case JSBPartType.Base64String:
                     return "String";
                 case JSBPartType.Uri:
@@ -551,6 +569,20 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             codeBuilder
                 .L($"<JsonProperty(\"{TransformToCamelCase(key)}\")>")
                 .L($"Public Property {EscapeIdentifier(TransformToTitleCase(key))} As Email{GenerateDefaultIfExisting(key, jsonSchemaBuilderEmail)}")
+                .EmptyLine();
+        }
+
+        #endregion
+
+        #region Generate DataString
+
+        private void GenerateOrdinaryDataString(CodeBuilder codeBuilder, IdentifierString key, JSBDataString jsonSchemaBuilderDataString)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderDataString);
+
+            codeBuilder
+                .L($"<JsonProperty(\"{TransformToCamelCase(key)}\")>")
+                .L($"Public Property {EscapeIdentifier(TransformToTitleCase(key))} As DataString{GenerateDefaultIfExisting(key, jsonSchemaBuilderDataString)}")
                 .EmptyLine();
         }
 
@@ -1079,6 +1111,11 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private string GenerateDefaultIfExisting(IdentifierString key, JSBEmail jsonSchemaBuilderEmail)
         {
             return string.IsNullOrWhiteSpace(jsonSchemaBuilderEmail.DefaultValue) ? string.Empty : $" = New Email(\"{EscapeVbStringLiteral(jsonSchemaBuilderEmail.DefaultValue)}\")";
+        }
+
+        private string GenerateDefaultIfExisting(IdentifierString key, JSBDataString jsonSchemaBuilderDataString)
+        {
+            return string.IsNullOrWhiteSpace(jsonSchemaBuilderDataString.DefaultValue) ? string.Empty : $" = New DataString(\"{EscapeVbStringLiteral(jsonSchemaBuilderDataString.DefaultValue)}\")";
         }
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBUri jsonSchemaBuilderUri)
