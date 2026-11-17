@@ -85,6 +85,18 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void BuildFromAssemblyTSQL()
+        {
+            string pathString = ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar;
+            string assemblyPath = GetType().Assembly.Location;
+            string pathStringExpanded = Path.GetFullPath(pathString, assemblyPath);
+            string jsonSchemaApplicationRoot = Path.Combine(pathStringExpanded, "JsonSchema");
+            LoadAllJsonSchemaBuildersAndWriteSchemasToFile(jsonSchemaApplicationRoot);
+            string applicationRoot = Path.Combine(pathStringExpanded, "TSQL");
+            LoadAllJsonSchemaBuildersAndGenerateTSQLCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
+        }
+
+        [Fact]
         public void TestCSharpEntitiesCodeGeneration()
         {
             CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
@@ -373,6 +385,70 @@ namespace JsonSchemaBuilder.Test
             Assert.Contains("public static class Edge", workflowDefinition.code);
         }
 
+        [Fact]
+        public void TestTSQLCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            codeGenerator.Register(new WorkflowDefinitionJsonSchema());
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            codeGenerator.Register(new FtpInformationJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.TSQL_DDL);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.sql"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated TSQL DDL for CompositionTest.sql");
+
+            //The module becomes a TSQL schema created with a guard if missing
+            Assert.Contains("IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'Default')", compositionTest.code);
+            //AllOf merges the properties of all object subschemas into the owning table
+            Assert.Contains("CREATE TABLE [Default].[CompositionTest]", compositionTest.code);
+            Assert.Contains("[Name] NVARCHAR(100) NOT NULL", compositionTest.code);
+            Assert.Contains("[Count] BIGINT NULL", compositionTest.code);
+            //A property name present in several subschemas is only emitted once per merge,
+            //so it occurs exactly twice: in the owning table and in the CombinedArray child table
+            int sharedValueCount = 0;
+            int indexOfSharedValue = compositionTest.code.IndexOf("[SharedValue] NVARCHAR(MAX) NOT NULL", StringComparison.Ordinal);
+            while (indexOfSharedValue != -1)
+            {
+                sharedValueCount += 1;
+                indexOfSharedValue = compositionTest.code.IndexOf("[SharedValue] NVARCHAR(MAX) NOT NULL", indexOfSharedValue + 1, StringComparison.Ordinal);
+            }
+            Assert.Equal(2, sharedValueCount);
+            //AnyOf and OneOf have no single column shape and map to a JSON column
+            Assert.Contains("[AnyChoice] NVARCHAR(MAX) NULL", compositionTest.code);
+            Assert.Contains("[OneChoice] NVARCHAR(MAX) NULL", compositionTest.code);
+            //An array of AllOf parts becomes a child table with the merged columns
+            Assert.Contains("CREATE TABLE [Default].[CompositionTestCombinedArray]", compositionTest.code);
+            Assert.Contains("[ParentId] BIGINT NOT NULL", compositionTest.code);
+            Assert.Contains("CONSTRAINT [FK_CompositionTestCombinedArray] FOREIGN KEY ([ParentId]) REFERENCES [Default].[CompositionTest] ([Id])", compositionTest.code);
+            //Child tables are dropped before their parents
+            Assert.Contains("DROP TABLE [Default].[CompositionTestCombinedArray];", compositionTest.code);
+
+            (string fileName, string code) workflowDefinition = generated.FirstOrDefault(g => g.fileName.EndsWith("WorkflowDefinition.sql"));
+            Assert.False(string.IsNullOrEmpty(workflowDefinition.code), "Expected generated TSQL DDL for WorkflowDefinition.sql");
+            //Objects in arrays become child tables with one row per item and a ParentId back to the owner
+            Assert.Contains("CREATE TABLE [Default].[WorkflowDefinition]", workflowDefinition.code);
+            Assert.Contains("[Name] NVARCHAR(100) NOT NULL", workflowDefinition.code);
+            Assert.Contains("CREATE TABLE [Default].[WorkflowDefinitionNodes]", workflowDefinition.code);
+            Assert.Contains("[NodeKey] NVARCHAR(100) NULL", workflowDefinition.code);
+            Assert.Contains("CREATE TABLE [Default].[WorkflowDefinitionEdges]", workflowDefinition.code);
+            Assert.Contains("[FromNodeKey] NVARCHAR(100) NOT NULL", workflowDefinition.code);
+            Assert.Contains("CONSTRAINT [FK_WorkflowDefinitionNodes] FOREIGN KEY ([ParentId]) REFERENCES [Default].[WorkflowDefinition] ([Id])", workflowDefinition.code);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.sql"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated TSQL DDL for StringEnumAsTopPart.sql");
+            //String enums become a CHECK constraint on the column with the raw enum values
+            Assert.Contains("CREATE TABLE [Funny.Onion].[StringEnumAsTopPart]", stringEnum.code);
+            Assert.Contains("[MyTopPartString] NVARCHAR(MAX) NULL CHECK ([MyTopPartString] IN (N'Monster', N'item', N'Nusense'))", stringEnum.code);
+
+            (string fileName, string code) ftpInformation = generated.FirstOrDefault(g => g.fileName.EndsWith("FtpInformation.sql"));
+            Assert.False(string.IsNullOrEmpty(ftpInformation.code), "Expected generated TSQL DDL for FtpInformation.sql");
+            //The requiredness of the reference property wins over the referenced definition part
+            Assert.Contains("CREATE TABLE [Funny.Onion].[FtpInformation]", ftpInformation.code);
+            Assert.Contains("[FtpType] NVARCHAR(MAX) NOT NULL CHECK ([FtpType] IN (N'Auto', N'FTP', N'FTPS'))", ftpInformation.code);
+            Assert.Contains("[SourceFileName] NVARCHAR(MAX) NOT NULL", ftpInformation.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -464,6 +540,21 @@ namespace JsonSchemaBuilder.Test
                 codeGenerator.Register(jsonSchema);
             }
             codeGenerator.GenerateToFile(Code.Java);
+        }
+
+        private static void LoadAllJsonSchemaBuildersAndGenerateTSQLCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
+        {
+            if (Directory.Exists(applicationRoot))
+            {
+                Directory.Delete(applicationRoot, true);
+            }
+            CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
+            foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
+            {
+                IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
+                codeGenerator.Register(jsonSchema);
+            }
+            codeGenerator.GenerateToFile(Code.TSQL_DDL);
         }
 
         private static void LoadAllJsonSchemaBuildersAndWriteSchemasToFile(string jsonSchemaApplicationRoot)
