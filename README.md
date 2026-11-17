@@ -33,7 +33,7 @@ My intention is to support all parts of the official Json Schema Draft 7 and som
 Code generation is built based on the above schema parts. The generation is done in batch mode
 
 ### Supported languages
-* C# (serialization classes, Newtonsoft.Json)
+* C# (serialization classes with a serializer choice: Newtonsoft.Json, System.Text.Json, or Akka.NET Hyperion)
 * C# Entities for Code First approach to development
 * TypeScript
 * PHP
@@ -42,9 +42,6 @@ Code generation is built based on the above schema parts. The generation is done
 * TSQL DDL for Database First approach to development
 
 ## TODO
-* C#: Expand support for serializer other than Newtonsoft version
-  * Microsoft own
-  * Akka.Net serializer Hyperion
 * Support for later than Draft 7 schema
 * Remote schema code generation support
 * Use of Microsoft own serializer and [json-everything](https://github.com/gregsdennis/json-everything) instead of [Manatee.Json](https://github.com/gregsdennis/Manatee.Json)
