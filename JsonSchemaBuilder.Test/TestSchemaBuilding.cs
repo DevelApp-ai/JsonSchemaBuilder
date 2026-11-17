@@ -8,6 +8,7 @@ using DevelApp.Utility.Model;
 using System.Linq;
 using DevelApp.JsonSchemaBuilder.CodeGeneration;
 using DevelApp.JsonSchemaBuilder.DataTypes;
+using Manatee.Json.Serialization;
 using System.Net.Mail;
 using UriType = DevelApp.JsonSchemaBuilder.DataTypes.Uri;
 using GuidType = DevelApp.JsonSchemaBuilder.DataTypes.Guid;
@@ -362,6 +363,101 @@ namespace JsonSchemaBuilder.Test
             var phone = new JSBPhoneNumber("ContactPhone", "Contact phone number", "+1-555-123-4567");
             var schema = phone.AsJsonSchema();
             Assert.NotNull(schema);
+        }
+
+        #endregion
+
+        #region DataString Data Type Tests
+
+        [Fact]
+        public void TestDataStringDataClass()
+        {
+            // Test DataString creation from string
+            DataString dataString1 = new DataString("Hello world");
+            Assert.Equal("Hello world", dataString1.Value);
+            Assert.Equal(11, dataString1.Length);
+            Assert.False(dataString1.HasLimitations);
+
+            // Test implicit conversion from string
+            DataString dataString2 = "Another value";
+            Assert.Equal("Another value", dataString2.Value);
+
+            // Test implicit conversion to string
+            string str = dataString1;
+            Assert.Equal("Hello world", str);
+
+            // Test equality (ordinal like ordinary strings)
+            DataString dataString3 = new DataString("Hello world");
+            Assert.Equal(dataString1, dataString3);
+            Assert.True(dataString1.Equals("Hello world"));
+            Assert.False(dataString1.Equals("hello world"));
+            Assert.False(dataString1.Equals(null));
+        }
+
+        [Fact]
+        public void TestDataStringLimitations()
+        {
+            // Value within all limitations
+            DataString dataString = new DataString("abc123", minLength: 3, maxLength: 10, pattern: "^[a-z0-9]+$");
+            Assert.True(dataString.HasLimitations);
+            Assert.True(dataString.IsPatternMatched);
+            Assert.Equal(3u, dataString.MinLength);
+            Assert.Equal(10u, dataString.MaxLength);
+            Assert.Equal("^[a-z0-9]+$", dataString.Pattern);
+
+            // Too short
+            Assert.Throws<ArgumentException>(() => new DataString("ab", minLength: 3));
+
+            // Too long
+            Assert.Throws<ArgumentException>(() => new DataString("abcdefghijk", maxLength: 10));
+
+            // Pattern mismatch
+            Assert.Throws<ArgumentException>(() => new DataString("ABC", pattern: "^[a-z]+$"));
+        }
+
+        [Fact]
+        public void TestDataStringNullHandling()
+        {
+            // Null converts to null so nullable members behave like string
+            DataString dataString = null;
+            Assert.Null(dataString);
+
+            string str = dataString;
+            Assert.Null(str);
+
+            // Explicit null rejection on construction
+            Assert.Throws<ArgumentNullException>(() => new DataString(null));
+        }
+
+        [Fact]
+        public void TestJSBDataString()
+        {
+            var dataString = new JSBDataString("MyDataString", "Data string with limitations", defaultValue: "abc123",
+                minLength: 3, maxLength: 10, pattern: "^[a-z0-9]+$");
+            var schema = dataString.AsJsonSchema();
+            Assert.NotNull(schema);
+
+            //The limitations are emitted to the schema
+            //NB: default values are not emitted to the schema, they are only carried by code generation
+            string json = schema.ToJson(new JsonSerializer()).ToString();
+            Assert.Contains("\"type\":\"string\"", json);
+            Assert.Contains("minLength", json);
+            Assert.Contains("maxLength", json);
+            Assert.Contains("pattern", json);
+        }
+
+        [Fact]
+        public void TestJSBDataStringWithoutLimitations()
+        {
+            var dataString = new JSBDataString("MyPlainDataString", "Data string without limitations");
+            var schema = dataString.AsJsonSchema();
+            Assert.NotNull(schema);
+
+            string json = schema.ToJson(new JsonSerializer()).ToString();
+            Assert.Contains("\"type\":\"string\"", json);
+            Assert.DoesNotContain("minLength", json);
+            Assert.DoesNotContain("maxLength", json);
+            Assert.DoesNotContain("pattern", json);
         }
 
         #endregion

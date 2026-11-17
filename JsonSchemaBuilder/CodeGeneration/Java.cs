@@ -206,6 +206,17 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                         GenerateOrdinaryEmail(codeBuilder, key, jsonSchemaBuilderEmail);
                     }
                     break;
+                case JSBPartType.DataString:
+                    JSBDataString jsonSchemaBuilderDataString = value as JSBDataString;
+                    if (jsonSchemaBuilderDataString.Enums != null && jsonSchemaBuilderDataString.Enums.Count > 0)
+                    {
+                        GenerateEnumString(codeBuilder, key, jsonSchemaBuilderDataString, isDefinition);
+                    }
+                    else
+                    {
+                        GenerateOrdinaryDataString(codeBuilder, key, jsonSchemaBuilderDataString);
+                    }
+                    break;
                 case JSBPartType.Integer:
                     JSBInteger jsonSchemaBuilderInteger = value as JSBInteger;
                     if (jsonSchemaBuilderInteger.Enums != null && jsonSchemaBuilderInteger.Enums.Count > 0)
@@ -360,6 +371,14 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     return "OffsetDateTime";
                 case JSBPartType.Time:
                     return "OffsetTime";
+                case JSBPartType.DataString:
+                    //A DataString with enums uses the generated string enum as item type
+                    JSBString dataStringItem = jsonSchemaBuilderPart as JSBString;
+                    if (dataStringItem.Enums.Count > 0)
+                    {
+                        return jsonSchemaBuilderPart.Name + "Enum";
+                    }
+                    return "String";
                 case JSBPartType.Email:
                 case JSBPartType.Base64String:
                 case JSBPartType.PhoneNumber:
@@ -509,6 +528,17 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private void GenerateOrdinaryEmail(CodeBuilder codeBuilder, IdentifierString key, JSBEmail jsonSchemaBuilderEmail)
         {
             GenerateProperty(codeBuilder, key, jsonSchemaBuilderEmail, "String", GenerateDefaultIfExisting(key, jsonSchemaBuilderEmail));
+        }
+
+        #endregion
+
+        #region Generate DataString
+
+        private void GenerateOrdinaryDataString(CodeBuilder codeBuilder, IdentifierString key, JSBDataString jsonSchemaBuilderDataString)
+        {
+            //The DataString value object with its limitation handling is a C#/VB side concept,
+            //so Java gets the plain wire type like Email, PhoneNumber and Base64String
+            GenerateProperty(codeBuilder, key, jsonSchemaBuilderDataString, "String", GenerateDefaultIfExisting(key, jsonSchemaBuilderDataString));
         }
 
         #endregion

@@ -16,8 +16,8 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
     /// types for enums, mirroring the semantics of the C# generator:
     /// - AllOf merges all object subschemas into one interface
     /// - AnyOf/OneOf map to object since the runtime shape is not fixed
-    /// - Date, DateTime, Time, Email, PhoneNumber, Guid, Uri and Base64String
-    ///   map to string since that is the wire format of the generated JSON Schema
+    /// - Date, DateTime, Time, Email, PhoneNumber, Guid, Uri, Base64String and
+    ///   DataString map to string since that is the wire format of the generated JSON Schema
     /// - Properties are optional when the part is not required
     /// </summary>
     public class TypeScript
@@ -307,6 +307,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 case JSBPartType.Time:
                 case JSBPartType.Email:
                 case JSBPartType.Base64String:
+                case JSBPartType.DataString:
                 case JSBPartType.Uri:
                 case JSBPartType.Guid:
                 case JSBPartType.PhoneNumber:
