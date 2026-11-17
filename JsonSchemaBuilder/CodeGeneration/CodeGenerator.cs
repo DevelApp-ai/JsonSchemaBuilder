@@ -77,6 +77,30 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             RegisteredJsonSchemas.Add(jsonSchema.FileName, jsonSchema);
         }
 
+        /// <summary>
+        /// Finds the registry key (FileName) of the registered schema definition carrying
+        /// the given schema. Fragment only references resolve against the schema being
+        /// generated, and the registry is keyed by the definition FileName, which is
+        /// derived from the definition class name and can differ from the internal
+        /// schema name
+        /// </summary>
+        /// <param name="schema"></param>
+        /// <param name="registeredFileName"></param>
+        /// <returns></returns>
+        public bool TryGetRegisteredFileName(JSBSchema schema, out string registeredFileName)
+        {
+            foreach (var pair in RegisteredJsonSchemas)
+            {
+                if (ReferenceEquals(pair.Value.JsonSchemaBuilderSchema, schema))
+                {
+                    registeredFileName = pair.Key;
+                    return true;
+                }
+            }
+            registeredFileName = null;
+            return false;
+        }
+
         private void DoReferenceResolution(IJSBPart jsonSchemaBuilderPart, NamespaceString module)
         {
             //Walk definitions carried by any part so definitions on other levels
