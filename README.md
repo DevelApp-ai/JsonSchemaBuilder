@@ -42,7 +42,6 @@ Code generation is built based on the above schema parts. The generation is done
 * TSQL DDL for Database First approach to development
 
 ## TODO
-* Create DataString data class to replace string ?
 * C#: Expand support for serializer other than Newtonsoft version
   * Microsoft own
   * Akka.Net serializer Hyperion
