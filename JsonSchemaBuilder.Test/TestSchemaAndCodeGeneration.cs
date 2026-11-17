@@ -73,6 +73,18 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void BuildFromAssemblyJava()
+        {
+            string pathString = ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar;
+            string assemblyPath = GetType().Assembly.Location;
+            string pathStringExpanded = Path.GetFullPath(pathString, assemblyPath);
+            string jsonSchemaApplicationRoot = Path.Combine(pathStringExpanded, "JsonSchema");
+            LoadAllJsonSchemaBuildersAndWriteSchemasToFile(jsonSchemaApplicationRoot);
+            string applicationRoot = Path.Combine(pathStringExpanded, "Java");
+            LoadAllJsonSchemaBuildersAndGenerateJavaCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
+        }
+
+        [Fact]
         public void TestCSharpEntitiesCodeGeneration()
         {
             CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
@@ -300,6 +312,67 @@ namespace JsonSchemaBuilder.Test
             Assert.Contains("Partial Public Class Edge", workflowDefinition.code);
         }
 
+        [Fact]
+        public void TestJavaCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            codeGenerator.Register(new WorkflowDefinitionJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.Java);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.java"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated Java code for CompositionTest.java");
+
+            //The package is derived from the module; Java reserved word segments get a trailing underscore
+            Assert.Contains("package default_;", compositionTest.code);
+            Assert.Contains("import com.fasterxml.jackson.annotation.JsonProperty;", compositionTest.code);
+            //Java has no partial classes: the first class of a file is top level, the rest are static nested classes
+            Assert.Contains("public class CompositionTest", compositionTest.code);
+            Assert.Contains("public static class Combined", compositionTest.code);
+            //The AllOf part itself becomes a property pointing at the merged class
+            Assert.Contains("@JsonProperty(\"combined\")", compositionTest.code);
+            Assert.Contains("private Combined combinedProp;", compositionTest.code);
+            Assert.Contains("public Combined getCombinedProp()", compositionTest.code);
+            //AnyOf and OneOf map to Object since Java has no union type
+            Assert.Contains("private Object anyChoice;", compositionTest.code);
+            Assert.Contains("private Object oneChoice;", compositionTest.code);
+            //An array of AllOf parts uses the merged class as item type
+            Assert.Contains("private List<Combined> combinedArray = new ArrayList<>();", compositionTest.code);
+            Assert.Contains("private String name;", compositionTest.code);
+            //Boxed value types are used since the part is not required
+            Assert.Contains("private Long count;", compositionTest.code);
+            //A property name present in several subschemas is only emitted once
+            int sharedValueCount = 0;
+            int indexOfSharedValue = compositionTest.code.IndexOf("private String sharedValue;", StringComparison.Ordinal);
+            while (indexOfSharedValue != -1)
+            {
+                sharedValueCount += 1;
+                indexOfSharedValue = compositionTest.code.IndexOf("private String sharedValue;", indexOfSharedValue + 1, StringComparison.Ordinal);
+            }
+            Assert.Equal(1, sharedValueCount);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.java"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated Java code for StringEnumAsTopPart.java");
+            //Enums on string parts become Java enums whose @JsonValue matches the raw schema value
+            Assert.Contains("package funny.onion;", stringEnum.code);
+            Assert.Contains("public enum MyTopPartStringEnum", stringEnum.code);
+            Assert.Contains("Monster(\"Monster\"),", stringEnum.code);
+            Assert.Contains("Item(\"item\"),", stringEnum.code);
+            Assert.Contains("Nusense(\"Nusense\");", stringEnum.code);
+            Assert.Contains("@JsonValue", stringEnum.code);
+            Assert.Contains("private MyTopPartStringEnum myTopPartString;", stringEnum.code);
+
+            (string fileName, string code) workflowDefinition = generated.FirstOrDefault(g => g.fileName.EndsWith("WorkflowDefinition.java"));
+            Assert.False(string.IsNullOrEmpty(workflowDefinition.code), "Expected generated Java code for WorkflowDefinition.java");
+            //Objects in arrays are emitted as static nested classes
+            Assert.Contains("public class WorkflowDefinition", workflowDefinition.code);
+            Assert.Contains("private List<Node> nodes = new ArrayList<>();", workflowDefinition.code);
+            Assert.Contains("private List<Edge> edges = new ArrayList<>();", workflowDefinition.code);
+            Assert.Contains("public static class Node", workflowDefinition.code);
+            Assert.Contains("public static class Edge", workflowDefinition.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -376,6 +449,21 @@ namespace JsonSchemaBuilder.Test
                 codeGenerator.Register(jsonSchema);
             }
             codeGenerator.GenerateToFile(Code.VB);
+        }
+
+        private static void LoadAllJsonSchemaBuildersAndGenerateJavaCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
+        {
+            if (Directory.Exists(applicationRoot))
+            {
+                Directory.Delete(applicationRoot, true);
+            }
+            CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
+            foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
+            {
+                IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
+                codeGenerator.Register(jsonSchema);
+            }
+            codeGenerator.GenerateToFile(Code.Java);
         }
 
         private static void LoadAllJsonSchemaBuildersAndWriteSchemasToFile(string jsonSchemaApplicationRoot)
