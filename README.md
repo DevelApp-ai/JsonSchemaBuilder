@@ -9,6 +9,9 @@ This has mainly been made to support my [Workflow project](https://github.com/De
 ## Schema parts supported
 My intention is to support all parts of the official Json Schema Draft 7 and some special formats that are used often
 
+* **AnyOf/OneOf/AllOf**
+
+  Composition parts. AnyOf/OneOf are emitted as JSON Schema composition keywords; AllOf is additionally folded into the owning structure where the target language supports it.
 * **Array**
 * **Boolean**
 * **Date**
@@ -30,26 +33,15 @@ My intention is to support all parts of the official Json Schema Draft 7 and som
 Code generation is built based on the above schema parts. The generation is done in batch mode
 
 ### Supported languages
-* C#
-
-### Planned language support
-* PHP
+* C# (serialization classes with a serializer choice: Newtonsoft.Json, System.Text.Json, or Akka.NET Hyperion)
+* C# Entities for Code First approach to development
 * TypeScript
+* PHP
 * VB
 * Java
 * TSQL DDL for Database First approach to development
-* C# Entities for Code First approach to development
 
 ## TODO
-* Create Email data class (with System.Net.Mail.MailAddress as inner?)
-* Create DataString data class to replace string ?
-* Add implicit casts in classes
-* Enum support for other that String
-* Add Base64String with conversions
-* Support for AnyOf, OneOf and AllOf (last done through conversion)
-* C#: Expand support for serializer other than Newtonsoft version
-  * Microsoft own
-  * Akka.Net serializer Hyperion
 * Support for later than Draft 7 schema
 * Remote schema code generation support
 * Use of Microsoft own serializer and [json-everything](https://github.com/gregsdennis/json-everything) instead of [Manatee.Json](https://github.com/gregsdennis/Manatee.Json)
