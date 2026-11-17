@@ -501,6 +501,57 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void TestNestedDefinitionsOnObjectPart()
+        {
+            JSBString innerDefinition = new JSBString("InnerDefinition", "A definition carried by an object part", maxLength: 20);
+            JSBObject nestedObject = new JSBObject("NestedObject", "Object carrying definitions on a part level",
+                props: new List<IJSBPart>() { new JSBString("Name", "A property", isRequired: true) },
+                defs: new List<IJSBPart>() { innerDefinition });
+            JsonValue schemaJson = nestedObject.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            Assert.True(schemaJson.Object.ContainsKey("definitions"), $"Expected definitions keyword in the object part schema: {schemaJson}");
+            Assert.True(schemaJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition in the object part schema: {schemaJson}");
+        }
+
+        [Fact]
+        public void TestNestedDefinitionsOnCompositionParts()
+        {
+            JSBString innerDefinition = new JSBString("InnerDefinition", "A definition carried by a composition part", maxLength: 20);
+            List<IJSBPart> defs = new List<IJSBPart>() { innerDefinition };
+
+            var anyOf = new JSBAnyOf("AnyOfPart", "AnyOf with definitions", CompositionSubSchemas(), defs: defs);
+            JsonValue anyOfJson = anyOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            Assert.True(anyOfJson.Object.ContainsKey("definitions") && anyOfJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition in the anyOf schema: {anyOfJson}");
+
+            var oneOf = new JSBOneOf("OneOfPart", "OneOf with definitions", CompositionSubSchemas(), defs: defs);
+            JsonValue oneOfJson = oneOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            Assert.True(oneOfJson.Object.ContainsKey("definitions") && oneOfJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition in the oneOf schema: {oneOfJson}");
+
+            var allOf = new JSBAllOf("AllOfPart", "AllOf with definitions", CompositionSubSchemas(), defs: defs);
+            JsonValue allOfJson = allOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            Assert.True(allOfJson.Object.ContainsKey("definitions") && allOfJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition in the allOf schema: {allOfJson}");
+        }
+
+        [Fact]
+        public void TestDeeplyNestedDefinitionsInSchema()
+        {
+            //A definition carried by the top part that itself carries a definition
+            JSBString innerDefinition = new JSBString("InnerDefinition", "Innermost definition", maxLength: 20);
+            JSBObject middleDefinition = new JSBObject("MiddleDefinition", "Definition carrying a nested definition",
+                props: new List<IJSBPart>() { new JSBString("Value", "A value in the middle definition", isRequired: true) },
+                defs: new List<IJSBPart>() { innerDefinition });
+            JSBObject topObject = new JSBObject("TopObject", "Top part with local definitions",
+                props: new List<IJSBPart>() { new JSBString("Name", "A property", isRequired: true) },
+                defs: new List<IJSBPart>() { middleDefinition });
+            JSBSchema schema = new JSBSchema("DeeplyNestedSchema", "Schema with definitions below the top schema", topPart: topObject);
+            JsonValue schemaJson = schema.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            //The top part is the root of the emitted schema so its definitions land at the root
+            Assert.True(schemaJson.Object.ContainsKey("definitions"), $"Expected definitions at the root of the schema: {schemaJson}");
+            Assert.True(schemaJson.Object["definitions"].Object.ContainsKey("MiddleDefinition"), $"Expected the top part definition at the root of the schema: {schemaJson}");
+            JsonValue middleDefinitionJson = schemaJson.Object["definitions"].Object["MiddleDefinition"];
+            Assert.True(middleDefinitionJson.Object.ContainsKey("definitions") && middleDefinitionJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition below the middle definition: {schemaJson}");
+        }
+
+        [Fact]
         public void TestCompositionWithoutSubschemasThrows()
         {
             // The composition parts throw a JsonSchemaBuilderException (internal) when built

@@ -15,12 +15,20 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 IdentifierString allOfName,
                 string description,
                 List<IJSBPart> schemas,
-                bool isRequired = false)
+                bool isRequired = false,
+                List<IJSBPart> defs = null)
         {
             Name = allOfName;
             Description = description;
             IsRequired = isRequired;
             Schemas = schemas ?? new List<IJSBPart>();
+            if (defs != null)
+            {
+                foreach (IJSBPart part in defs)
+                {
+                    Definitions.Add(part.Name, part);
+                }
+            }
         }
 
         public IdentifierString Name { get; }
@@ -30,6 +38,12 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         public bool IsRequired { get; }
 
         public List<IJSBPart> Schemas { get; }
+
+        /// <summary>
+        /// Definitions carried by this part so definitions are supported
+        /// on other levels than the top schema
+        /// </summary>
+        public Dictionary<string, IJSBPart> Definitions { get; } = new Dictionary<string, IJSBPart>();
 
         public JSBPartType PartType
         {
@@ -50,6 +64,12 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 .Title(Name)
                 .Description(Description)
                 .Comment($"Generated with JsonSchemaBuilder");
+            //Add definitions carried by this part so definitions are supported
+            //on other levels than the top schema
+            foreach (var pair in Definitions)
+            {
+                returnSchema.Definition(pair.Key, pair.Value.AsJsonSchema());
+            }
             returnSchema.AllOf(Schemas.Select(schema => schema.AsJsonSchema()).ToArray());
             return returnSchema;
         }
