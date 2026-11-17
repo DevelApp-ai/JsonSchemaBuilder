@@ -49,6 +49,18 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void BuildFromAssemblyPHP()
+        {
+            string pathString = ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar;
+            string assemblyPath = GetType().Assembly.Location;
+            string pathStringExpanded = Path.GetFullPath(pathString, assemblyPath);
+            string jsonSchemaApplicationRoot = Path.Combine(pathStringExpanded, "JsonSchema");
+            LoadAllJsonSchemaBuildersAndWriteSchemasToFile(jsonSchemaApplicationRoot);
+            string applicationRoot = Path.Combine(pathStringExpanded, "PHP");
+            LoadAllJsonSchemaBuildersAndGeneratePHPCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
+        }
+
+        [Fact]
         public void TestCSharpEntitiesCodeGeneration()
         {
             CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
@@ -159,6 +171,64 @@ namespace JsonSchemaBuilder.Test
             Assert.Contains("export interface Edge", workflowDefinition.code);
         }
 
+        [Fact]
+        public void TestPHPCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            codeGenerator.Register(new WorkflowDefinitionJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.PHP);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.php"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated PHP code for CompositionTest.php");
+
+            //AllOf merges the properties of all object subschemas into one class
+            Assert.Contains("<?php", compositionTest.code);
+            Assert.Contains("declare(strict_types=1);", compositionTest.code);
+            Assert.Contains("namespace Default;", compositionTest.code);
+            Assert.Contains("class CompositionTest", compositionTest.code);
+            Assert.Contains("class Combined", compositionTest.code);
+            Assert.Contains("public ?Combined $combined;", compositionTest.code);
+            //AnyOf and OneOf map to object since the subschema choice cannot be expressed
+            Assert.Contains("public ?object $anyChoice;", compositionTest.code);
+            Assert.Contains("public ?object $oneChoice;", compositionTest.code);
+            //An array of AllOf parts uses the merged class as docblock item type
+            Assert.Contains("public ?array $combinedArray;", compositionTest.code);
+            Assert.Contains("@var Combined[]|null", compositionTest.code);
+            Assert.Contains("public string $name;", compositionTest.code);
+            Assert.Contains("public ?int $count;", compositionTest.code);
+            //A property name present in several subschemas is only emitted once
+            int sharedValueCount = 0;
+            int indexOfSharedValue = compositionTest.code.IndexOf("public string $sharedValue;", StringComparison.Ordinal);
+            while (indexOfSharedValue != -1)
+            {
+                sharedValueCount += 1;
+                indexOfSharedValue = compositionTest.code.IndexOf("public string $sharedValue;", indexOfSharedValue + 1, StringComparison.Ordinal);
+            }
+            Assert.Equal(1, sharedValueCount);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.php"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated PHP code for StringEnumAsTopPart.php");
+            //Enums on string parts become string backed enums (PHP 8.1)
+            Assert.Contains("namespace Funny\\Onion;", stringEnum.code);
+            Assert.Contains("enum MyTopPartStringEnum: string", stringEnum.code);
+            Assert.Contains("case Monster = 'Monster';", stringEnum.code);
+            Assert.Contains("case item = 'item';", stringEnum.code);
+            Assert.Contains("case Nusense = 'Nusense';", stringEnum.code);
+            Assert.Contains("public ?MyTopPartStringEnum $myTopPartString;", stringEnum.code);
+
+            (string fileName, string code) workflowDefinition = generated.FirstOrDefault(g => g.fileName.EndsWith("WorkflowDefinition.php"));
+            Assert.False(string.IsNullOrEmpty(workflowDefinition.code), "Expected generated PHP code for WorkflowDefinition.php");
+            //Objects in arrays are emitted as their own classes
+            Assert.Contains("class WorkflowDefinition", workflowDefinition.code);
+            Assert.Contains("@var Node[]", workflowDefinition.code);
+            Assert.Contains("public array $nodes;", workflowDefinition.code);
+            Assert.Contains("public array $edges;", workflowDefinition.code);
+            Assert.Contains("class Node", workflowDefinition.code);
+            Assert.Contains("class Edge", workflowDefinition.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -205,6 +275,21 @@ namespace JsonSchemaBuilder.Test
                 codeGenerator.Register(jsonSchema);
             }
             codeGenerator.GenerateToFile(Code.TypeScript);
+        }
+
+        private static void LoadAllJsonSchemaBuildersAndGeneratePHPCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
+        {
+            if (Directory.Exists(applicationRoot))
+            {
+                Directory.Delete(applicationRoot, true);
+            }
+            CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
+            foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
+            {
+                IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
+                codeGenerator.Register(jsonSchema);
+            }
+            codeGenerator.GenerateToFile(Code.PHP);
         }
 
         private static void LoadAllJsonSchemaBuildersAndWriteSchemasToFile(string jsonSchemaApplicationRoot)
