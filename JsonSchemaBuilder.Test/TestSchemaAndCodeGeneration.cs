@@ -97,6 +97,18 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void BuildFromAssemblyCSharpSystemTextJson()
+        {
+            string pathString = ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar;
+            string assemblyPath = GetType().Assembly.Location;
+            string pathStringExpanded = Path.GetFullPath(pathString, assemblyPath);
+            string jsonSchemaApplicationRoot = Path.Combine(pathStringExpanded, "JsonSchema");
+            LoadAllJsonSchemaBuildersAndWriteSchemasToFile(jsonSchemaApplicationRoot);
+            string applicationRoot = Path.Combine(pathStringExpanded, "CSharpSystemTextJson");
+            LoadAllJsonSchemaBuildersAndGenerateCSharpSystemTextJsonCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
+        }
+
+        [Fact]
         public void TestCSharpEntitiesCodeGeneration()
         {
             CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
@@ -490,6 +502,78 @@ namespace JsonSchemaBuilder.Test
             Assert.Contains("CHECK (LEN([MyTopPartDataString]) >= 3)", dataStringTsql.code);
         }
 
+        [Fact]
+        public void TestCSharpSystemTextJsonCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            codeGenerator.Register(new DataStringAsTopPartJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.CSharp, Serializer.SystemTextJson);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated System.Text.Json code for StringEnumAsTopPart.cs");
+            //System.Text.Json uses its own mapping attributes and enum converter
+            Assert.Contains("using System.Text.Json;", stringEnum.code);
+            Assert.Contains("using System.Text.Json.Serialization;", stringEnum.code);
+            Assert.Contains("[JsonPropertyName(\"myTopPartString\"), JsonConverter(typeof(JsonStringEnumConverter))]", stringEnum.code);
+            Assert.DoesNotContain("Newtonsoft", stringEnum.code);
+            Assert.DoesNotContain("typeof(StringEnumConverter)", stringEnum.code);
+
+            (string fileName, string code) dataString = generated.FirstOrDefault(g => g.fileName.EndsWith("DataStringAsTopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(dataString.code), "Expected generated System.Text.Json code for DataStringAsTopPart.cs");
+            Assert.Contains("[JsonPropertyName(\"myTopPartDataString\")]", dataString.code);
+            Assert.Contains("public DataString MyTopPartDataString", dataString.code);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.cs"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated System.Text.Json code for CompositionTest.cs");
+            //The class and property structure is the same as the Newtonsoft output, only the attributes differ
+            Assert.Contains("public partial class CompositionTest", compositionTest.code);
+            Assert.Contains("[JsonPropertyName(\"anyChoice\")]", compositionTest.code);
+            Assert.Contains("[JsonPropertyName(\"combined\")]", compositionTest.code);
+        }
+
+        [Fact]
+        public void TestCSharpHyperionCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            codeGenerator.Register(new DataStringAsTopPartJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.CSharp, Serializer.Hyperion);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated Hyperion code for StringEnumAsTopPart.cs");
+            //Hyperion serializes plain POCOs without mapping attributes and uses the
+            //actual property names on the wire, so the classes are attribute-free
+            Assert.DoesNotContain("JsonProperty", stringEnum.code);
+            Assert.DoesNotContain("JsonConverter", stringEnum.code);
+            Assert.DoesNotContain("Newtonsoft", stringEnum.code);
+            Assert.Contains("public enum MyTopPartStringEnum", stringEnum.code);
+            Assert.Contains("public MyTopPartStringEnum MyTopPartString { get; set; }", stringEnum.code);
+
+            (string fileName, string code) dataString = generated.FirstOrDefault(g => g.fileName.EndsWith("DataStringAsTopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(dataString.code), "Expected generated Hyperion code for DataStringAsTopPart.cs");
+            Assert.Contains("public DataString MyTopPartDataString", dataString.code);
+            Assert.DoesNotContain("JsonProperty", dataString.code);
+        }
+
+        [Fact]
+        public void TestCSharpNewtonsoftIsTheDefaultSerializer()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+
+            //The serializer-less overload keeps producing the Newtonsoft output
+            List<(string fileName, string code)> defaultGenerated = codeGenerator.Generate(Code.CSharp);
+            List<(string fileName, string code)> newtonsoftGenerated = codeGenerator.Generate(Code.CSharp, Serializer.Newtonsoft);
+            Assert.Equal(newtonsoftGenerated, defaultGenerated);
+
+            (string fileName, string code) stringEnum = defaultGenerated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated Newtonsoft code for StringEnumAsTopPart.cs");
+            Assert.Contains("using Newtonsoft.Json;", stringEnum.code);
+            Assert.Contains("[JsonProperty(\"myTopPartString\"), JsonConverter(typeof(StringEnumConverter))]", stringEnum.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -596,6 +680,21 @@ namespace JsonSchemaBuilder.Test
                 codeGenerator.Register(jsonSchema);
             }
             codeGenerator.GenerateToFile(Code.TSQL_DDL);
+        }
+
+        private static void LoadAllJsonSchemaBuildersAndGenerateCSharpSystemTextJsonCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
+        {
+            if (Directory.Exists(applicationRoot))
+            {
+                Directory.Delete(applicationRoot, true);
+            }
+            CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
+            foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
+            {
+                IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
+                codeGenerator.Register(jsonSchema);
+            }
+            codeGenerator.GenerateToFile(Code.CSharp, Serializer.SystemTextJson);
         }
 
         private static void LoadAllJsonSchemaBuildersAndWriteSchemasToFile(string jsonSchemaApplicationRoot)

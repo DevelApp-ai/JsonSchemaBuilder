@@ -19,16 +19,25 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <summary>
         /// Generate fileName and code
         /// </summary>
-        /// <param name="schema"></param>
+        /// <param name="codeGenerator"></param>
+        /// <param name="serializer"></param>
         /// <returns></returns>
-        internal static List<(string fileName, string code)> GenerateCode(CodeGenerator codeGenerator)
+        internal static List<(string fileName, string code)> GenerateCode(CodeGenerator codeGenerator, Serializer serializer = Serializer.Newtonsoft)
         {
+            if (serializer == Serializer.Hyperion)
+            {
+                //Hyperion serializes plain POCOs without any mapping attributes and uses
+                //the actual property names on the wire, so the attribute-free entity
+                //classes are the Hyperion-ready serialization classes
+                return CSharpEntities.GenerateCode(codeGenerator);
+            }
+
             List<(string fileName, string code)> generatedCode = new List<(string fileName, string code)>();
             foreach (var schema in codeGenerator.RegisteredJsonSchemas.Values)
             {
                 string fileName = Path.Combine(codeGenerator.ApplicationRoot, schema.Module.ToFilePath, schema.Name + FILE_ENDING);
 
-                CSharp cSharp = new CSharp(codeGenerator, schema.Module);
+                CSharp cSharp = new CSharp(codeGenerator, schema.Module, serializer);
                 generatedCode.Add((fileName, cSharp.GenerateCode(schema.JsonSchemaBuilderSchema)));
             }
             return generatedCode;
@@ -39,14 +48,16 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private JSBSchema _rootSchema;
         private Dictionary<string, IJsonSchemaDefinition> _registeredSchemas;
         private CodeGenerator _codeGenerator;
+        private Serializer _serializer;
         private HashSet<string> _emittedAllOfClassNames = new HashSet<string>();
 
-        private CSharp(CodeGenerator codeGenerator, NamespaceString startNameSpace)
+        private CSharp(CodeGenerator codeGenerator, NamespaceString startNameSpace, Serializer serializer)
         {
             _applicationRoot = codeGenerator.ApplicationRoot;
             _startNameSpace = startNameSpace;
             _registeredSchemas = codeGenerator.RegisteredJsonSchemas;
             _codeGenerator = codeGenerator;
+            _serializer = serializer;
         }
 
         /// <summary>
@@ -92,18 +103,58 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private void GenerateStartOfSchema(CodeBuilder codeBuilder, JSBSchema schema)
         {
             //TODO run through schema children to get all references to make sure they are included
+            //usings needed no matter the serializer
             codeBuilder
                 .L("using System;")
-                .L("using Newtonsoft.Json;")
-                .L("using Newtonsoft.Json.Converters;")
-                .L("using Ardalis.SmartEnum;")
                 .L("using System.Collections.Generic;")
                 .L("using System.Net.Mail;")
-                .L("using DevelApp.JsonSchemaBuilder.DataTypes;")
+                .L("using DevelApp.JsonSchemaBuilder.DataTypes;");
+            switch (_serializer)
+            {
+                case Serializer.SystemTextJson:
+                    codeBuilder
+                        .L("using System.Text.Json;")
+                        .L("using System.Text.Json.Serialization;");
+                    break;
+                case Serializer.Newtonsoft:
+                default:
+                    codeBuilder
+                        .L("using Newtonsoft.Json;")
+                        .L("using Newtonsoft.Json.Converters;")
+                        .L("using Ardalis.SmartEnum;");
+                    break;
+            }
+            codeBuilder
                 .EmptyLine()
                 .L($"namespace {_startNameSpace}")
                 .L("{")
                 .IndentIncrease();
+        }
+
+        /// <summary>
+        /// Builds the property mapping attribute line for the active serializer.
+        /// Hyperion never reaches this since it generates attribute-free classes
+        /// </summary>
+        private string BuildPropertyAttribute(IdentifierString key)
+        {
+            if (_serializer == Serializer.SystemTextJson)
+            {
+                return $"[JsonPropertyName(\"{TransformToCamelCase(key)}\")]";
+            }
+            return $"[JsonProperty(\"{TransformToCamelCase(key)}\")]";
+        }
+
+        /// <summary>
+        /// Builds the property mapping attribute line with the string enum converter
+        /// of the active serializer so enums keep the exact schema wire values
+        /// </summary>
+        private string BuildStringEnumPropertyAttribute(IdentifierString key)
+        {
+            if (_serializer == Serializer.SystemTextJson)
+            {
+                return $"[JsonPropertyName(\"{TransformToCamelCase(key)}\"), JsonConverter(typeof(JsonStringEnumConverter))]";
+            }
+            return $"[JsonProperty(\"{TransformToCamelCase(key)}\"), JsonConverter(typeof(StringEnumConverter))]";
         }
 
         private void GenerateEndOfSchema(CodeBuilder codeBuilder, JSBSchema schema)
@@ -313,7 +364,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             if (jsonSchemaBuilderArray.Items.Count == 1)
             {
                 codeBuilder
-                    .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                    .L(BuildPropertyAttribute(key))
                     .L($"public List<{MakeCorrectItemType(jsonSchemaBuilderArray.Items[0])}> {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderArray)}")
                     .EmptyLine();
             }
@@ -443,7 +494,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderBoolean);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public bool{BuildRequired(jsonSchemaBuilderBoolean.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderBoolean)}")
                 .EmptyLine();
         }
@@ -472,7 +523,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             
             GenerateComments(codeBuilder, key, jsonSchemaBuilderBoolean);
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderBoolean.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderBoolean)}")
                 .EmptyLine();
         }
@@ -486,7 +537,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderDate);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public DateTime{BuildRequired(jsonSchemaBuilderDate.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDate)}")
                 .EmptyLine();
         }
@@ -514,7 +565,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             
             GenerateComments(codeBuilder, key, jsonSchemaBuilderDate);
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderDate.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDate)}")
                 .EmptyLine();
         }
@@ -528,7 +579,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderDateTime);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public DateTime{BuildRequired(jsonSchemaBuilderDateTime.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDateTime)}")
                 .EmptyLine();
         }
@@ -556,7 +607,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             
             GenerateComments(codeBuilder, key, jsonSchemaBuilderDateTime);
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderDateTime.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDateTime)}")
                 .EmptyLine();
         }
@@ -575,7 +626,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderEmail);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public Email {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderEmail)}")
                 .EmptyLine();
         }
@@ -589,7 +640,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderDataString);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public DataString {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderDataString)}")
                 .EmptyLine();
         }
@@ -603,7 +654,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderInteger);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public long{BuildRequired(jsonSchemaBuilderInteger.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderInteger)}")
                 .EmptyLine();
         }
@@ -629,7 +680,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             
             GenerateComments(codeBuilder, key, jsonSchemaBuilderInteger);
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderInteger.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderInteger)}")
                 .EmptyLine();
         }
@@ -643,7 +694,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderNumber);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public double{BuildRequired(jsonSchemaBuilderNumber.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderNumber)}")
                 .EmptyLine();
         }
@@ -679,7 +730,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             
             GenerateComments(codeBuilder, key, jsonSchemaBuilderNumber);
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderNumber.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderNumber)}")
                 .EmptyLine();
         }
@@ -729,7 +780,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             if (definitions == null && !parentIsArray)// Assume not top part
             {
                 codeBuilder
-                    .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                    .L(BuildPropertyAttribute(key))
                     .L($"public {TransformToTitleCase(key)} {TransformToTitleCase(key)}Prop {{ get; set; }} ")
                     .EmptyLine();
             }
@@ -793,7 +844,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             if (!parentIsArray)
             {
                 codeBuilder
-                    .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                    .L(BuildPropertyAttribute(key))
                     .L($"public {TransformToTitleCase(key)} {TransformToTitleCase(key)}Prop {{ get; set; }}")
                     .EmptyLine();
             }
@@ -807,7 +858,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderCompositionChoice);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public object {TransformToTitleCase(key)} {{ get; set; }}")
                 .EmptyLine();
         }
@@ -837,7 +888,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 GenerateComments(codeBuilder, key, jsonSchemaBuilderString);
                 codeBuilder
-                    .L($"[JsonProperty(\"{TransformToCamelCase(key)}\"), JsonConverter(typeof(StringEnumConverter))]")
+                    .L(BuildStringEnumPropertyAttribute(key))
                     .L($"public {TransformToTitleCase(key)}Enum {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderString)}")
                     .EmptyLine();
             }
@@ -848,7 +899,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderString);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public string {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderString)}")
                 .EmptyLine();
         }
@@ -862,7 +913,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderBase64String);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public string {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderBase64String)}")
                 .EmptyLine();
         }
@@ -876,7 +927,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderUri);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public Uri {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderUri)}")
                 .EmptyLine();
         }
@@ -890,7 +941,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderGuid);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public Guid {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderGuid)}")
                 .EmptyLine();
         }
@@ -904,7 +955,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderPhoneNumber);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public PhoneNumber {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderPhoneNumber)}")
                 .EmptyLine();
         }
@@ -936,7 +987,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             
             GenerateComments(codeBuilder, key, jsonSchemaBuilderTime);
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public {TransformToTitleCase(key)}Enum{BuildRequired(jsonSchemaBuilderTime.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderTime)}")
                 .EmptyLine();
         }
@@ -946,7 +997,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderTime);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public DateTime{BuildRequired(jsonSchemaBuilderTime.IsRequired)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderTime)}")
                 .EmptyLine();
         }
@@ -988,7 +1039,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateComments(codeBuilder, key, jsonSchemaBuilderUriReference);
 
             codeBuilder
-                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L(BuildPropertyAttribute(key))
                 .L($"public {MakeCorrectItemType(referencedPart)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderUriReference)}")
                 .EmptyLine();
         }
@@ -1001,7 +1052,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 GenerateComments(codeBuilder, key, jsonSchemaBuilderUriReference);
 
                 codeBuilder
-                    .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                    .L(BuildPropertyAttribute(key))
                     .L($"public {MakeCorrectItemType(jsonValueOfSchema)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderUriReference)}")
                     .EmptyLine();
             }

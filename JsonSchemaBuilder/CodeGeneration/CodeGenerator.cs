@@ -26,18 +26,20 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         public string JsonSchemaApplicationRoot { get; }
 
         /// <summary>
-        /// Generate a list of code to memory and suggest a filename from registered IJsonSchemaDefinitions
+        /// Generate a list of code to memory and suggest a filename from registered IJsonSchemaDefinitions.
+        /// The serializer option is only consumed by Code.CSharp; the other code types ignore it
         /// </summary>
         /// <param name="code"></param>
+        /// <param name="serializer"></param>
         /// <returns></returns>
-        public List<(string fileName, string code)> Generate(Code code)
+        public List<(string fileName, string code)> Generate(Code code, Serializer serializer = Serializer.Newtonsoft)
         {
             DoReferenceResolution();
 
             switch (code)
             {
                 case Code.CSharp:
-                    return CSharp.GenerateCode(this);
+                    return CSharp.GenerateCode(this, serializer);
                 case Code.PHP:
                     return PHP.GenerateCode(this);
                 case Code.TypeScript:
@@ -185,9 +187,9 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// Generate code to a path from registered IJsonSchemaDefinitions
         /// </summary>
         /// <param name="code"></param>
-        public void GenerateToFile(Code code)
+        public void GenerateToFile(Code code, Serializer serializer = Serializer.Newtonsoft)
         {
-            List<(string fileName, string code)> tupleList = Generate(code);
+            List<(string fileName, string code)> tupleList = Generate(code, serializer);
 
             foreach (var tuple in tupleList)
             {
