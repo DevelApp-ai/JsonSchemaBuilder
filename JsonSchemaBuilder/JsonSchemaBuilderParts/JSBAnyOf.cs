@@ -1,28 +1,37 @@
+using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.Utility.Model;
 using Manatee.Json.Schema;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
     /// <summary>
     /// AnyOf schema composition - validates against any of the specified schemas
-    /// TODO: Implement full AnyOf support for schema composition
     /// </summary>
-    public class JSBAnyOf : AbstractJSBPart<object>
+    public class JSBAnyOf : IJSBPart
     {
         public JSBAnyOf(
                 IdentifierString anyOfName,
                 string description,
                 List<IJSBPart> schemas,
                 bool isRequired = false)
-            : base(anyOfName, description, isRequired, null, null, null)
         {
+            Name = anyOfName;
+            Description = description;
+            IsRequired = isRequired;
             Schemas = schemas ?? new List<IJSBPart>();
         }
 
+        public IdentifierString Name { get; }
+
+        public string Description { get; }
+
+        public bool IsRequired { get; }
+
         public List<IJSBPart> Schemas { get; }
 
-        public override JSBPartType PartType
+        public JSBPartType PartType
         {
             get
             {
@@ -30,11 +39,18 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public JsonSchema AsJsonSchema()
         {
-            // TODO: Implement AnyOf schema generation
-            var returnSchema = InitialJsonSchema();
-            // returnSchema.AnyOf(...) - needs implementation
+            if (Schemas.Count == 0)
+            {
+                throw new JsonSchemaBuilderException($"The AnyOf part {Name} must contain at least one subschema");
+            }
+
+            var returnSchema = new JsonSchema()
+                .Title(Name)
+                .Description(Description)
+                .Comment($"Generated with JsonSchemaBuilder");
+            returnSchema.AnyOf(Schemas.Select(schema => schema.AsJsonSchema()).ToArray());
             return returnSchema;
         }
     }

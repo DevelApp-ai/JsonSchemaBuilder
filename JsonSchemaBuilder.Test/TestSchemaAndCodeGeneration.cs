@@ -24,6 +24,80 @@ namespace JsonSchemaBuilder.Test
             LoadAllJsonSchemaBuildersAndGenerateCSharpCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
         }
 
+        [Fact]
+        public void BuildFromAssemblyEntities()
+        {
+            string pathString = ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar + ".." + Path.DirectorySeparatorChar;
+            string assemblyPath = GetType().Assembly.Location;
+            string pathStringExpanded = Path.GetFullPath(pathString, assemblyPath);
+            string jsonSchemaApplicationRoot = Path.Combine(pathStringExpanded, "JsonSchema");
+            LoadAllJsonSchemaBuildersAndWriteSchemasToFile(jsonSchemaApplicationRoot);
+            string applicationRoot = Path.Combine(pathStringExpanded, "CSharpEntities");
+            LoadAllJsonSchemaBuildersAndGenerateCSharpEntitiesCodeToFile(applicationRoot, jsonSchemaApplicationRoot);
+        }
+
+        [Fact]
+        public void TestCSharpEntitiesCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            codeGenerator.Register(new StringEnumAsTopPartJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.CSharp_Entities);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.cs"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated entities code for CompositionTest.cs");
+            //Entity classes keep the class and property structure of the serialization classes
+            Assert.Contains("public partial class CompositionTest", compositionTest.code);
+            Assert.Contains("public partial class Combined", compositionTest.code);
+            Assert.Contains("public Combined CombinedProp { get; set; }", compositionTest.code);
+            Assert.Contains("public object AnyChoice { get; set; }", compositionTest.code);
+            //Serialization specifics are removed for Code First entities
+            Assert.DoesNotContain("JsonProperty", compositionTest.code);
+            Assert.DoesNotContain("Newtonsoft", compositionTest.code);
+            Assert.DoesNotContain("Ardalis", compositionTest.code);
+
+            (string fileName, string code) stringEnum = generated.FirstOrDefault(g => g.fileName.EndsWith("StringEnumAsTopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(stringEnum.code), "Expected generated entities code for StringEnumAsTopPart.cs");
+            //Enums are kept as plain C# enums without the JsonConverter attribute
+            Assert.Contains("public enum MyTopPartStringEnum", stringEnum.code);
+            Assert.Contains("public MyTopPartStringEnum MyTopPartString { get; set; }", stringEnum.code);
+            Assert.DoesNotContain("JsonConverter", stringEnum.code);
+            Assert.DoesNotContain("JsonProperty", stringEnum.code);
+        }
+
+        [Fact]
+        public void TestCompositionCSharpCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new CompositionTestJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.CSharp);
+
+            (string fileName, string code) compositionTest = generated.FirstOrDefault(g => g.fileName.EndsWith("CompositionTest.cs"));
+            Assert.False(string.IsNullOrEmpty(compositionTest.code), "Expected generated code for CompositionTest.cs");
+
+            //AllOf conversion merges the properties of all object subschemas into one class
+            Assert.Contains("public partial class Combined", compositionTest.code);
+            Assert.Contains("public string Name { get; set; }", compositionTest.code);
+            Assert.Contains("public long? Count { get; set; }", compositionTest.code);
+            //The AllOf part itself becomes a property pointing at the merged class
+            Assert.Contains("public Combined CombinedProp { get; set; }", compositionTest.code);
+            //AnyOf and OneOf map to object since C# has no union type
+            Assert.Contains("public object AnyChoice { get; set; }", compositionTest.code);
+            Assert.Contains("public object OneChoice { get; set; }", compositionTest.code);
+            //An array of AllOf parts uses the merged class as item type
+            Assert.Contains("List<Combined>", compositionTest.code);
+
+            //A property name present in several subschemas is only emitted once
+            int sharedValueCount = 0;
+            int indexOfSharedValue = compositionTest.code.IndexOf("public string SharedValue { get; set; }", StringComparison.Ordinal);
+            while (indexOfSharedValue != -1)
+            {
+                sharedValueCount += 1;
+                indexOfSharedValue = compositionTest.code.IndexOf("public string SharedValue { get; set; }", indexOfSharedValue + 1, StringComparison.Ordinal);
+            }
+            Assert.Equal(1, sharedValueCount);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -40,6 +114,21 @@ namespace JsonSchemaBuilder.Test
                 codeGenerator.Register(jsonSchema);
             }
             codeGenerator.GenerateToFile(Code.CSharp);
+        }
+
+        private static void LoadAllJsonSchemaBuildersAndGenerateCSharpEntitiesCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
+        {
+            if (Directory.Exists(applicationRoot))
+            {
+                Directory.Delete(applicationRoot, true);
+            }
+            CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
+            foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
+            {
+                IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
+                codeGenerator.Register(jsonSchema);
+            }
+            codeGenerator.GenerateToFile(Code.CSharp_Entities);
         }
 
         private static void LoadAllJsonSchemaBuildersAndWriteSchemasToFile(string jsonSchemaApplicationRoot)
@@ -585,6 +674,52 @@ namespace JsonSchemaBuilder.Test
             JSBArray arrayPart = new JSBArray("MyTopPartArrayOfArray", "TopPart", items);
 
             return new JSBSchema("ArrayOfObjectsAsATopPart", Description, topPart: arrayPart);
+        }
+    }
+
+    public class CompositionTestJsonSchema : AbstractJsonSchema
+    {
+        protected override JSBSchema BuildJsonSchema()
+        {
+            List<IJSBPart> subAProps = new List<IJSBPart>();
+            subAProps.Add(new JSBString("Name", "Name of the first subschema", maxLength: 100, isRequired: true));
+            subAProps.Add(new JSBString("SharedValue", "Only emitted once in the merged class", isRequired: true));
+            JSBObject subA = new JSBObject("SubA", "First subschema", props: subAProps);
+
+            List<IJSBPart> subBProps = new List<IJSBPart>();
+            subBProps.Add(new JSBInteger("Count", "Count of the second subschema"));
+            subBProps.Add(new JSBString("SharedValue", "Same property name as in SubA", isRequired: true));
+            JSBObject subB = new JSBObject("SubB", "Second subschema", props: subBProps);
+
+            JSBAllOf combined = new JSBAllOf("Combined", "AllOf conversion merges SubA and SubB into one class", new List<IJSBPart>() { subA, subB });
+            JSBAnyOf anyChoice = new JSBAnyOf("AnyChoice", "Value validates against at least one subschema", new List<IJSBPart>() { subA, subB });
+            JSBOneOf oneChoice = new JSBOneOf("OneChoice", "Value validates against exactly one subschema", new List<IJSBPart>() { subA, subB });
+            JSBArray arrayOfAllOf = new JSBArray("CombinedArray", "Array of merged AllOf classes", new List<IJSBPart>() { combined });
+
+            List<IJSBPart> props = new List<IJSBPart>();
+            props.Add(combined);
+            props.Add(anyChoice);
+            props.Add(oneChoice);
+            props.Add(arrayOfAllOf);
+            JSBObject objectPart = new JSBObject("CompositionTest", "Schema with composition parts", props: props);
+
+            return new JSBSchema("CompositionTest", Description, topPart: objectPart);
+        }
+
+        public override string Description
+        {
+            get
+            {
+                return "Schema with AnyOf, OneOf and AllOf composition parts for testing code generation";
+            }
+        }
+
+        public override NamespaceString Module
+        {
+            get
+            {
+                return "Default";
+            }
         }
     }
 }

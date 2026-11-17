@@ -1,28 +1,37 @@
+using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.Utility.Model;
 using Manatee.Json.Schema;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
     /// <summary>
     /// AllOf schema composition - validates against all of the specified schemas
-    /// TODO: Implement full AllOf support for schema composition (can be done through conversion)
     /// </summary>
-    public class JSBAllOf : AbstractJSBPart<object>
+    public class JSBAllOf : IJSBPart
     {
         public JSBAllOf(
                 IdentifierString allOfName,
                 string description,
                 List<IJSBPart> schemas,
                 bool isRequired = false)
-            : base(allOfName, description, isRequired, null, null, null)
         {
+            Name = allOfName;
+            Description = description;
+            IsRequired = isRequired;
             Schemas = schemas ?? new List<IJSBPart>();
         }
 
+        public IdentifierString Name { get; }
+
+        public string Description { get; }
+
+        public bool IsRequired { get; }
+
         public List<IJSBPart> Schemas { get; }
 
-        public override JSBPartType PartType
+        public JSBPartType PartType
         {
             get
             {
@@ -30,11 +39,18 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public JsonSchema AsJsonSchema()
         {
-            // TODO: Implement AllOf schema generation through conversion
-            var returnSchema = InitialJsonSchema();
-            // returnSchema.AllOf(...) - needs implementation
+            if (Schemas.Count == 0)
+            {
+                throw new JsonSchemaBuilderException($"The AllOf part {Name} must contain at least one subschema");
+            }
+
+            var returnSchema = new JsonSchema()
+                .Title(Name)
+                .Description(Description)
+                .Comment($"Generated with JsonSchemaBuilder");
+            returnSchema.AllOf(Schemas.Select(schema => schema.AsJsonSchema()).ToArray());
             return returnSchema;
         }
     }

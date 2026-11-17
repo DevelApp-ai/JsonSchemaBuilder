@@ -39,6 +39,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private JSBSchema _rootSchema;
         private Dictionary<string, IJsonSchemaDefinition> _registeredSchemas;
         private CodeGenerator _codeGenerator;
+        private HashSet<string> _emittedAllOfClassNames = new HashSet<string>();
 
         private CSharp(CodeGenerator codeGenerator, NamespaceString startNameSpace)
         {
@@ -265,6 +266,18 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     JSBPhoneNumber jsonSchemaBuilderPhoneNumber = value as JSBPhoneNumber;
                     GenerateOrdinaryPhoneNumber(codeBuilder, key, jsonSchemaBuilderPhoneNumber);
                     break;
+                case JSBPartType.AllOf:
+                    JSBAllOf jsonSchemaBuilderAllOf = value as JSBAllOf;
+                    GenerateOrdinaryAllOf(codeBuilder, key, jsonSchemaBuilderAllOf, parentIsArray);
+                    break;
+                case JSBPartType.AnyOf:
+                case JSBPartType.OneOf:
+                    //The value validates against at least one (AnyOf) or exactly one (OneOf) of the subschemas, which maps to object
+                    if (!parentIsArray)
+                    {
+                        GenerateOrdinaryCompositionChoice(codeBuilder, key, value);
+                    }
+                    break;
                 default:
                     codeBuilder.L($"throw new NotImplementedException(\"PartType {value.PartType} is not implemented\");");
                     break;
@@ -337,6 +350,13 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     return "Guid";
                 case JSBPartType.PhoneNumber:
                     return "PhoneNumber";
+                case JSBPartType.AllOf:
+                    //The AllOf part is merged into one class through conversion
+                    return jsonSchemaBuilderPart.Name;
+                case JSBPartType.AnyOf:
+                case JSBPartType.OneOf:
+                    //The value validates against one of the subschemas, which maps to object
+                    return "object";
                 case JSBPartType.Schema:
                     JSBSchema jSBSchema = jsonSchemaBuilderPart as JSBSchema;
                     if (jSBSchema.TopPart != null)
@@ -681,6 +701,83 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     .L($"public {TransformToTitleCase(key)} {TransformToTitleCase(key)}Prop {{ get; set; }} ")
                     .EmptyLine();
             }
+        }
+
+        /// <summary>
+        /// Generates an AllOf part by conversion: when all subschemas are objects their
+        /// properties are merged into one class. If any subschema is not an object the
+        /// merged class cannot be built and the part degrades to an object property.
+        /// </summary>
+        private void GenerateOrdinaryAllOf(CodeBuilder codeBuilder, IdentifierString key, JSBAllOf jsonSchemaBuilderAllOf, bool parentIsArray)
+        {
+            bool allSubSchemasAreObjects = jsonSchemaBuilderAllOf.Schemas.All(subSchema => subSchema.PartType == JSBPartType.Object);
+
+            if (!allSubSchemasAreObjects)
+            {
+                if (!parentIsArray)
+                {
+                    GenerateOrdinaryCompositionChoice(codeBuilder, key, jsonSchemaBuilderAllOf);
+                }
+                return;
+            }
+
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderAllOf);
+
+            string mergedClassName = TransformToTitleCase(key);
+            //The same AllOf part can be referenced both as a property and as an array
+            //item in one schema. The merged class is only emitted once per file,
+            //otherwise the generated code would contain duplicate class declarations.
+            bool mergedClassAlreadyEmitted = !_emittedAllOfClassNames.Add(mergedClassName);
+
+            if (!mergedClassAlreadyEmitted)
+            {
+                codeBuilder
+                    .L($"public partial class {mergedClassName}")
+                    .L("{")
+                    .IndentIncrease();
+
+                //Merge the properties of all subschemas. A property name present in several
+                //subschemas is only emitted once, matching the AllOf requirement that the
+                //same named property must validate against every subschema that defines it.
+                HashSet<string> emittedPropertyNames = new HashSet<string>();
+                foreach (IJSBPart subSchema in jsonSchemaBuilderAllOf.Schemas)
+                {
+                    JSBObject subObject = subSchema as JSBObject;
+                    foreach (KeyValuePair<IdentifierString, IJSBPart> pair in subObject.Properties)
+                    {
+                        if (emittedPropertyNames.Add(pair.Key.ToString()))
+                        {
+                            GenerateCodeForBuilderPart(codeBuilder, pair.Key, pair.Value);
+                            codeBuilder.EmptyLine();
+                        }
+                    }
+                }
+
+                codeBuilder
+                    .IndentDecrease()
+                    .L("}");
+            }
+
+            if (!parentIsArray)
+            {
+                codeBuilder
+                    .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                    .L($"public {TransformToTitleCase(key)} {TransformToTitleCase(key)}Prop {{ get; set; }}")
+                    .EmptyLine();
+            }
+        }
+
+        /// <summary>
+        /// Generates a composition part (AnyOf or OneOf) as an object property since C# has no union type.
+        /// </summary>
+        private void GenerateOrdinaryCompositionChoice(CodeBuilder codeBuilder, IdentifierString key, IJSBPart jsonSchemaBuilderCompositionChoice)
+        {
+            GenerateComments(codeBuilder, key, jsonSchemaBuilderCompositionChoice);
+
+            codeBuilder
+                .L($"[JsonProperty(\"{TransformToCamelCase(key)}\")]")
+                .L($"public object {TransformToTitleCase(key)} {{ get; set; }}")
+                .EmptyLine();
         }
 
         #endregion

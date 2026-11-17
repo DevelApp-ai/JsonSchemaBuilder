@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Xunit;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
+using Manatee.Json;
 using DevelApp.Utility.Model;
 using System.Linq;
 using DevelApp.JsonSchemaBuilder.CodeGeneration;
@@ -361,6 +362,56 @@ namespace JsonSchemaBuilder.Test
             var phone = new JSBPhoneNumber("ContactPhone", "Contact phone number", "+1-555-123-4567");
             var schema = phone.AsJsonSchema();
             Assert.NotNull(schema);
+        }
+
+        #endregion
+
+        #region Schema Composition Tests (AnyOf, OneOf, AllOf)
+
+        private static List<IJSBPart> CompositionSubSchemas()
+        {
+            return new List<IJSBPart>()
+            {
+                new JSBInteger("CompositionInt", "Integer variant", defaultValue: 42),
+                new JSBString("CompositionString", "String variant", minLength: 1)
+            };
+        }
+
+        [Fact]
+        public void TestAnyOfComposition()
+        {
+            var anyOf = new JSBAnyOf("AnyOfPart", "AnyOf composition", CompositionSubSchemas());
+            JsonValue schemaJson = anyOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            Assert.True(schemaJson.Object.ContainsKey("anyOf"), $"Expected anyOf keyword in schema: {schemaJson}");
+            Assert.Equal(2, schemaJson.Object["anyOf"].Array.Count);
+        }
+
+        [Fact]
+        public void TestOneOfComposition()
+        {
+            var oneOf = new JSBOneOf("OneOfPart", "OneOf composition", CompositionSubSchemas());
+            JsonValue schemaJson = oneOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            Assert.True(schemaJson.Object.ContainsKey("oneOf"), $"Expected oneOf keyword in schema: {schemaJson}");
+            Assert.Equal(2, schemaJson.Object["oneOf"].Array.Count);
+        }
+
+        [Fact]
+        public void TestAllOfComposition()
+        {
+            var allOf = new JSBAllOf("AllOfPart", "AllOf composition", CompositionSubSchemas());
+            JsonValue schemaJson = allOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            Assert.True(schemaJson.Object.ContainsKey("allOf"), $"Expected allOf keyword in schema: {schemaJson}");
+            Assert.Equal(2, schemaJson.Object["allOf"].Array.Count);
+        }
+
+        [Fact]
+        public void TestCompositionWithoutSubschemasThrows()
+        {
+            // The composition parts throw a JsonSchemaBuilderException (internal) when built
+            // without subschemas, surfaced to callers as an Exception
+            Assert.ThrowsAny<Exception>(() => new JSBAnyOf("EmptyAnyOf", "Empty", new List<IJSBPart>()).AsJsonSchema());
+            Assert.ThrowsAny<Exception>(() => new JSBOneOf("EmptyOneOf", "Empty", new List<IJSBPart>()).AsJsonSchema());
+            Assert.ThrowsAny<Exception>(() => new JSBAllOf("EmptyAllOf", "Empty", new List<IJSBPart>()).AsJsonSchema());
         }
 
         #endregion
