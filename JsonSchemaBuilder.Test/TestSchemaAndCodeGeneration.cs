@@ -593,6 +593,50 @@ namespace JsonSchemaBuilder.Test
             Assert.Contains("public string RefToSchemaLevelNested { get; set; }", nestedDefinitions.code);
         }
 
+        [Fact]
+        public void TestFragmentOnlySelfReferenceCSharpCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new FragmentRefAsTopPartJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.CSharp);
+
+            (string fileName, string code) fragmentRef = generated.FirstOrDefault(g => g.fileName.EndsWith("FragmentRefAsTopPart.cs"));
+            Assert.False(string.IsNullOrEmpty(fragmentRef.code), "Expected generated code for FragmentRefAsTopPart.cs");
+            //The schema is emitted as the top part class
+            Assert.Contains("public partial class FragmentRefAsATopPart", fragmentRef.code);
+            Assert.Contains("public string PlainProperty { get; set; }", fragmentRef.code);
+            //The fragment only reference resolves against the schema being generated even
+            //though the internal schema name differs from the class derived FileName
+            Assert.Contains("[JsonProperty(\"selfFragmentReference\")]", fragmentRef.code);
+            Assert.Contains("public string SelfFragmentReference { get; set; }", fragmentRef.code);
+        }
+
+        [Fact]
+        public void TestFragmentOnlySelfReferenceTypeScriptCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new FragmentRefAsTopPartJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.TypeScript);
+
+            (string fileName, string code) fragmentRef = generated.FirstOrDefault(g => g.fileName.EndsWith("FragmentRefAsTopPart.ts"));
+            Assert.False(string.IsNullOrEmpty(fragmentRef.code), "Expected generated code for FragmentRefAsTopPart.ts");
+            //The fragment only reference resolves to the innermost string definition
+            Assert.Contains("selfFragmentReference: string", fragmentRef.code);
+        }
+
+        [Fact]
+        public void TestFragmentOnlySelfReferenceTSQLCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new FragmentRefAsTopPartJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.TSQL_DDL);
+
+            (string fileName, string code) fragmentRef = generated.FirstOrDefault(g => g.fileName.EndsWith("FragmentRefAsTopPart.sql"));
+            Assert.False(string.IsNullOrEmpty(fragmentRef.code), "Expected generated code for FragmentRefAsTopPart.sql");
+            //The fragment only reference resolves to the string definition and its maxLength
+            Assert.Contains("[SelfFragmentReference] NVARCHAR(64)", fragmentRef.code);
+        }
+
 
         #region Assembly load all schemas and write
 
@@ -1370,6 +1414,43 @@ namespace JsonSchemaBuilder.Test
             get
             {
                 return "Used to test definitions on other levels than the top schema";
+            }
+        }
+
+        public override NamespaceString Module
+        {
+            get
+            {
+                return "Funny.Onion";
+            }
+        }
+    }
+
+    public class FragmentRefAsTopPartJsonSchema : AbstractJsonSchema
+    {
+        protected override JSBSchema BuildJsonSchema()
+        {
+            //A definition on the schema level that the fragment only reference points at
+            JSBString innerDefinition = new JSBString("InnerDefinition", "A definition referenced through a fragment only reference", maxLength: 64);
+
+            List<IJSBPart> props = new List<IJSBPart>();
+            props.Add(new JSBString("PlainProperty", "A plain property", maxLength: 100, isRequired: true));
+            props.Add(new JSBRef("SelfFragmentReference", "References a definition on the schema itself through a fragment only reference",
+                iriReference: new Uri("#/definitions/innerDefinition", UriKind.Relative), isRequired: true));
+            JSBObject objectPart = new JSBObject("FragmentRefAsATopPart", "Used to test fragment only references to own definitions", props: props);
+
+            //The internal schema name deliberately carries the family AsATopPart naming
+            //so it differs from the class derived FileName, exercising fragment only
+            //self reference resolution for schemas where the two names do not match
+            return new JSBSchema("FragmentRefAsATopPart", Description, topPart: objectPart,
+                defs: new List<IJSBPart>() { innerDefinition });
+        }
+
+        public override string Description
+        {
+            get
+            {
+                return "Used to test fragment only references to definitions on the schema being generated";
             }
         }
 

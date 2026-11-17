@@ -463,7 +463,15 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             string relativeLocalFileWithExpandedDot =  ExpandRelativelocalFile(jSBRef.RelativeLocalFile);
             if(string.IsNullOrWhiteSpace(relativeLocalFileWithExpandedDot))
             {
-                relativeLocalFileWithExpandedDot = Path.Combine(_startNameSpace.ToFilePath,_rootSchema.Name + ".schema.json");
+                //Fragment only references resolve against the schema being generated.
+                //The registry is keyed by the definition FileName, which is derived from
+                //the definition class name and can differ from the internal schema
+                //name, so the registered FileName is used when the schema is registered
+                if (!_codeGenerator.TryGetRegisteredFileName(_rootSchema, out string registeredFileName))
+                {
+                    registeredFileName = Path.Combine(_startNameSpace.ToFilePath,_rootSchema.Name + ".schema.json");
+                }
+                relativeLocalFileWithExpandedDot = registeredFileName;
             }
             return _codeGenerator.LookupReferencedPart(_codeGenerator.TransformToCamelCase(relativeLocalFileWithExpandedDot), jSBRef);
         }
