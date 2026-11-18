@@ -1,18 +1,20 @@
-﻿using DevelApp.JsonSchemaBuilder.Exceptions;
+using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.Utility.Model;
-using Manatee.Json;
-using Manatee.Json.Schema;
+using Json.Schema;
 using System.Collections.Generic;
+using System.Linq;
+using System.Text.Json.Nodes;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
     /// <summary>
     /// Convenience array definition in Json Schema. Requires Items definition.
     /// </summary>
-    public class JSBArray : AbstractJSBPart<JsonValue>
+    public class JSBArray : AbstractJSBPart<JsonNode>
     {
         public JSBArray(IdentifierString arrayName, string description, List<IJSBPart> items,
-            uint? minItems = null, uint? maxItems = null, bool uniqueItems = false, JsonValue defaultValue = null, List<JsonValue> examples = null, List<JsonValue> enums = null, bool isRequired = false) 
+            uint? minItems = null, uint? maxItems = null, bool uniqueItems = false, JsonNode defaultValue = null, List<JsonNode> examples = null, List<JsonNode> enums = null, bool isRequired = false) 
             : base(arrayName, description, isRequired, defaultValue, examples, enums)
         {
             if(items == null || items.Count == 0)
@@ -40,27 +42,31 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder()
         {
-            JsonSchema returnSchema = InitialJsonSchema()
-                .Type(JsonSchemaType.Array);
-            foreach(IJSBPart jsonSchemaBuilderPart in Items)
+            JsonSchemaBuilder builder = InitialJsonSchema()
+                .Type(SchemaValueType.Array);
+            if (Items.Count == 1)
             {
-                returnSchema.Items(jsonSchemaBuilderPart.AsJsonSchema());
+                builder = builder.Items(Items[0].AsJsonSchemaBuilder());
+            }
+            else
+            {
+                builder = builder.Items(Items.Select(item => item.AsJsonSchemaBuilder()));
             }
             if (MinItems.HasValue)
             {
-                returnSchema.MinItems(MinItems.Value);
+                builder = builder.MinItems(MinItems.Value);
             }
             if (MaxItems.HasValue)
             {
-                returnSchema.MaxItems(MaxItems.Value);
+                builder = builder.MaxItems(MaxItems.Value);
             }
             if(UniqueItems)
             {
-                returnSchema.UniqueItems(UniqueItems);
+                builder = builder.UniqueItems(UniqueItems);
             }
-            return returnSchema;
+            return builder;
         }
     }
 }

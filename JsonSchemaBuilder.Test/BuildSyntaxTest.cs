@@ -1,7 +1,7 @@
 using DevelApp.JsonSchemaBuilder;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
-using Manatee.Json.Schema;
+using Json.Schema;
 using System;
 using System.Collections.Generic;
 using Xunit;
@@ -112,7 +112,10 @@ namespace JsonSchemaBuilder.Test
         {
             string refName = "refName";
             string refDesc = "Description of refName";
-            Uri uri = new Uri("///E:/Projects/Funny/Onion/address.schema.json", UriKind.Relative);
+            //json-everything resolves $ref eagerly with System.Uri, so the reference
+            //has to be a well formed absolute uri. The old Manatee engine tolerated
+            //the ///E:/ form which System.Uri rejects as an empty authority
+            Uri uri = new Uri("file:///E:/Projects/Funny/Onion/address.schema.json");
 
             var varref = new JSBRef(refName, refDesc, uri);
 
@@ -124,7 +127,7 @@ namespace JsonSchemaBuilder.Test
         {
             string refName = "refName";
             string refDesc = "Description of refName";
-            Uri uri = new Uri("///E:/Projects/Funny/Onion/address.schema.json#/definitions/ftp", UriKind.Relative);
+            Uri uri = new Uri("file:///E:/Projects/Funny/Onion/address.schema.json#/definitions/ftp");
 
             var varref = new JSBRef(refName, refDesc, uri);
 

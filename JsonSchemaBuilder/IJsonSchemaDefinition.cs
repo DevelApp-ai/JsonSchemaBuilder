@@ -1,7 +1,7 @@
 ﻿using DevelApp.JsonSchemaBuilder.CodeGeneration;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
-using Manatee.Json.Schema;
+using Json.Schema;
 
 namespace DevelApp.JsonSchemaBuilder
 {

@@ -1,12 +1,13 @@
 ﻿using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.Utility.Model;
-using Manatee.Json;
-using Manatee.Json.Schema;
+using Json.Schema;
 using System;
 using System.Collections.Generic;
+using System.Text.Json.Nodes;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
     public abstract class AbstractJSBPart<T> : IJSBPart
     {
         public AbstractJSBPart(IdentifierString name, string description, bool isRequired, 
@@ -14,11 +15,11 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         {
             var type = typeof(T);
             _tIsString = type.Name.Equals("String");
-            _tIsJsonValue = type.Name.Equals("JsonValue");
+            _tIsJsonNode = type.Name.Equals("JsonNode");
             _tIsNullable = Nullable.GetUnderlyingType(type) != null;
-            if (!(_tIsString || _tIsJsonValue || _tIsNullable))
+            if (!(_tIsString || _tIsJsonNode || _tIsNullable))
             {
-                throw new JsonSchemaBuilderException($"Only allowed types are nullable or classes string and JsonValue as direct use of value types gives errors");
+                throw new JsonSchemaBuilderException($"Only allowed types are nullable or classes string and JsonNode as direct use of value types gives errors");
             }
 
             Name = name;
@@ -47,7 +48,7 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         }
 
         private bool _tIsString;
-        private bool _tIsJsonValue;
+        private bool _tIsJsonNode;
         private bool _tIsNullable;
 
         public IdentifierString Name { get; }
@@ -70,47 +71,65 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 
         public abstract JSBPartType PartType { get; }
 
-        public abstract JsonSchema AsJsonSchema();
-
-        protected JsonSchema InitialJsonSchema()
+        /// <summary>
+        /// Returns the part as a fully built Json.Schema JsonSchema
+        /// </summary>
+        public JsonSchema AsJsonSchema()
         {
-            JsonSchema returnSchema = new JsonSchema()
+            return JSBJsonSchemaBuild.Build(AsJsonSchemaBuilder());
+        }
+
+        public abstract JsonSchemaBuilder AsJsonSchemaBuilder();
+
+        /// <summary>
+        /// Starts every schema part with the common keywords: title, description,
+        /// $comment, examples, enum and the definitions carried by the part
+        /// </summary>
+        protected JsonSchemaBuilder InitialJsonSchema()
+        {
+            JsonSchemaBuilder builder = new JsonSchemaBuilder()
                 .Title(Name)
                 .Description(Description)
                 .Comment($"Generated with JsonSchemaBuilder");
             if (Examples != null)
             {
-                List<JsonValue> examplesOut = new List<JsonValue>();
+                List<JsonNode> examplesOut = new List<JsonNode>();
                 foreach (T item in Examples)
                 {
                     examplesOut.Add(TAsJsonValue(item));
                 }
-                returnSchema.Examples(examplesOut.ToArray());
+                builder.Examples(examplesOut);
             }
             if (Enums != null)
             {
-                List<JsonValue> enumsOut = new List<JsonValue>();
+                List<JsonNode> enumsOut = new List<JsonNode>();
                 foreach (T item in Enums)
                 {
                     enumsOut.Add(TAsJsonValue(item));
                 }
-                returnSchema.Enum(enumsOut.ToArray());
+                builder.Enum(enumsOut);
             }
             //Add definitions carried by this part so definitions are supported
             //on other levels than the top schema
+            List<(string name, JsonSchemaBuilder definition)> definitionsOut =
+                new List<(string name, JsonSchemaBuilder definition)>();
             foreach (var pair in Definitions)
             {
-                returnSchema.Definition(pair.Key, pair.Value.AsJsonSchema());
+                definitionsOut.Add((pair.Key, pair.Value.AsJsonSchemaBuilder()));
+            }
+            if (definitionsOut.Count > 0)
+            {
+                builder.Definitions(definitionsOut.ToArray());
             }
 
-            return returnSchema;
+            return builder;
         }
 
-        private JsonValue TAsJsonValue(T item)
+        private JsonNode TAsJsonValue(T item)
         {
-            if (_tIsJsonValue)
+            if (_tIsJsonNode)
             {
-                return item as JsonValue;
+                return item as JsonNode;
             }
             else if (_tIsString)
             {
@@ -120,15 +139,15 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             {
                 if (item is bool?)
                 {
-                    return new JsonValue((item as bool?).Value);
+                    return (item as bool?).Value;
                 }
                 if (item is long?)
                 {
-                    return new JsonValue((item as long?).Value);
+                    return (item as long?).Value;
                 }
                 if (item is double?)
                 {
-                    return new JsonValue((item as double?).Value);
+                    return (item as double?).Value;
                 }
                 throw new JsonSchemaBuilderException($"The nullable used ({typeof(T).Name}) is not supported");
             }

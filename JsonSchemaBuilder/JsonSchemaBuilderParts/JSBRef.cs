@@ -1,11 +1,12 @@
 ﻿using DevelApp.Utility.Model;
-using Manatee.Json.Schema;
+using Json.Schema;
 using System;
 using System.Collections.Generic;
 using System.IO;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
     /// <summary>
     /// Represents Uri (absolute Uri),  Uri reference (absolute or relative Uri), 
     /// Iri (absolute internationalized Uri),  Iri reference (absolute or relative internationalized Uri)
@@ -121,20 +122,20 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder()
         {
-            JsonSchema returnSchema = InitialJsonSchema()
-                .Type(JsonSchemaType.String);
+            JsonSchemaBuilder builder = InitialJsonSchema()
+                .Type(SchemaValueType.String);
             if(IriReference.IsAbsoluteUri)
             {
-                returnSchema.Format("iri");
+                builder = builder.Format("iri");
             }
             else
             {
-                returnSchema.Format("iri-reference");
+                builder = builder.Format("iri-reference");
             }
-            returnSchema.Ref(IriReference.OriginalString);
-            return returnSchema;
+            builder = builder.Ref(IriReference.OriginalString);
+            return builder;
         }
 
     }

@@ -3,12 +3,13 @@ using System;
 using System.Collections.Generic;
 using Xunit;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
-using Manatee.Json;
+using Json.Schema;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using DevelApp.Utility.Model;
 using System.Linq;
 using DevelApp.JsonSchemaBuilder.CodeGeneration;
 using DevelApp.JsonSchemaBuilder.DataTypes;
-using Manatee.Json.Serialization;
 using System.Net.Mail;
 using UriType = DevelApp.JsonSchemaBuilder.DataTypes.Uri;
 using GuidType = DevelApp.JsonSchemaBuilder.DataTypes.Guid;
@@ -439,7 +440,7 @@ namespace JsonSchemaBuilder.Test
 
             //The limitations are emitted to the schema
             //NB: default values are not emitted to the schema, they are only carried by code generation
-            string json = schema.ToJson(new JsonSerializer()).ToString();
+            string json = JsonSerializer.SerializeToNode(schema).ToJsonString();
             Assert.Contains("\"type\":\"string\"", json);
             Assert.Contains("minLength", json);
             Assert.Contains("maxLength", json);
@@ -453,7 +454,7 @@ namespace JsonSchemaBuilder.Test
             var schema = dataString.AsJsonSchema();
             Assert.NotNull(schema);
 
-            string json = schema.ToJson(new JsonSerializer()).ToString();
+            string json = JsonSerializer.SerializeToNode(schema).ToJsonString();
             Assert.Contains("\"type\":\"string\"", json);
             Assert.DoesNotContain("minLength", json);
             Assert.DoesNotContain("maxLength", json);
@@ -477,27 +478,27 @@ namespace JsonSchemaBuilder.Test
         public void TestAnyOfComposition()
         {
             var anyOf = new JSBAnyOf("AnyOfPart", "AnyOf composition", CompositionSubSchemas());
-            JsonValue schemaJson = anyOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
-            Assert.True(schemaJson.Object.ContainsKey("anyOf"), $"Expected anyOf keyword in schema: {schemaJson}");
-            Assert.Equal(2, schemaJson.Object["anyOf"].Array.Count);
+            JsonNode schemaJson = JsonSerializer.SerializeToNode(anyOf.AsJsonSchema());
+            Assert.True(schemaJson.AsObject().ContainsKey("anyOf"), $"Expected anyOf keyword in schema: {schemaJson}");
+            Assert.Equal(2, schemaJson .AsObject()["anyOf"].AsArray().Count);
         }
 
         [Fact]
         public void TestOneOfComposition()
         {
             var oneOf = new JSBOneOf("OneOfPart", "OneOf composition", CompositionSubSchemas());
-            JsonValue schemaJson = oneOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
-            Assert.True(schemaJson.Object.ContainsKey("oneOf"), $"Expected oneOf keyword in schema: {schemaJson}");
-            Assert.Equal(2, schemaJson.Object["oneOf"].Array.Count);
+            JsonNode schemaJson = JsonSerializer.SerializeToNode(oneOf.AsJsonSchema());
+            Assert.True(schemaJson.AsObject().ContainsKey("oneOf"), $"Expected oneOf keyword in schema: {schemaJson}");
+            Assert.Equal(2, schemaJson .AsObject()["oneOf"].AsArray().Count);
         }
 
         [Fact]
         public void TestAllOfComposition()
         {
             var allOf = new JSBAllOf("AllOfPart", "AllOf composition", CompositionSubSchemas());
-            JsonValue schemaJson = allOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
-            Assert.True(schemaJson.Object.ContainsKey("allOf"), $"Expected allOf keyword in schema: {schemaJson}");
-            Assert.Equal(2, schemaJson.Object["allOf"].Array.Count);
+            JsonNode schemaJson = JsonSerializer.SerializeToNode(allOf.AsJsonSchema());
+            Assert.True(schemaJson.AsObject().ContainsKey("allOf"), $"Expected allOf keyword in schema: {schemaJson}");
+            Assert.Equal(2, schemaJson .AsObject()["allOf"].AsArray().Count);
         }
 
         [Fact]
@@ -507,9 +508,9 @@ namespace JsonSchemaBuilder.Test
             JSBObject nestedObject = new JSBObject("NestedObject", "Object carrying definitions on a part level",
                 props: new List<IJSBPart>() { new JSBString("Name", "A property", isRequired: true) },
                 defs: new List<IJSBPart>() { innerDefinition });
-            JsonValue schemaJson = nestedObject.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
-            Assert.True(schemaJson.Object.ContainsKey("definitions"), $"Expected definitions keyword in the object part schema: {schemaJson}");
-            Assert.True(schemaJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition in the object part schema: {schemaJson}");
+            JsonNode schemaJson = JsonSerializer.SerializeToNode(nestedObject.AsJsonSchema());
+            Assert.True(schemaJson.AsObject().ContainsKey("definitions"), $"Expected definitions keyword in the object part schema: {schemaJson}");
+            Assert.True(schemaJson .AsObject()["definitions"].AsObject().ContainsKey("InnerDefinition"), $"Expected the nested definition in the object part schema: {schemaJson}");
         }
 
         [Fact]
@@ -519,16 +520,16 @@ namespace JsonSchemaBuilder.Test
             List<IJSBPart> defs = new List<IJSBPart>() { innerDefinition };
 
             var anyOf = new JSBAnyOf("AnyOfPart", "AnyOf with definitions", CompositionSubSchemas(), defs: defs);
-            JsonValue anyOfJson = anyOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
-            Assert.True(anyOfJson.Object.ContainsKey("definitions") && anyOfJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition in the anyOf schema: {anyOfJson}");
+            JsonNode anyOfJson = JsonSerializer.SerializeToNode(anyOf.AsJsonSchema());
+            Assert.True(anyOfJson.AsObject().ContainsKey("definitions") && anyOfJson .AsObject()["definitions"].AsObject().ContainsKey("InnerDefinition"), $"Expected the nested definition in the anyOf schema: {anyOfJson}");
 
             var oneOf = new JSBOneOf("OneOfPart", "OneOf with definitions", CompositionSubSchemas(), defs: defs);
-            JsonValue oneOfJson = oneOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
-            Assert.True(oneOfJson.Object.ContainsKey("definitions") && oneOfJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition in the oneOf schema: {oneOfJson}");
+            JsonNode oneOfJson = JsonSerializer.SerializeToNode(oneOf.AsJsonSchema());
+            Assert.True(oneOfJson.AsObject().ContainsKey("definitions") && oneOfJson .AsObject()["definitions"].AsObject().ContainsKey("InnerDefinition"), $"Expected the nested definition in the oneOf schema: {oneOfJson}");
 
             var allOf = new JSBAllOf("AllOfPart", "AllOf with definitions", CompositionSubSchemas(), defs: defs);
-            JsonValue allOfJson = allOf.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
-            Assert.True(allOfJson.Object.ContainsKey("definitions") && allOfJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition in the allOf schema: {allOfJson}");
+            JsonNode allOfJson = JsonSerializer.SerializeToNode(allOf.AsJsonSchema());
+            Assert.True(allOfJson.AsObject().ContainsKey("definitions") && allOfJson .AsObject()["definitions"].AsObject().ContainsKey("InnerDefinition"), $"Expected the nested definition in the allOf schema: {allOfJson}");
         }
 
         [Fact]
@@ -543,12 +544,12 @@ namespace JsonSchemaBuilder.Test
                 props: new List<IJSBPart>() { new JSBString("Name", "A property", isRequired: true) },
                 defs: new List<IJSBPart>() { middleDefinition });
             JSBSchema schema = new JSBSchema("DeeplyNestedSchema", "Schema with definitions below the top schema", topPart: topObject);
-            JsonValue schemaJson = schema.AsJsonSchema().ToJson(new Manatee.Json.Serialization.JsonSerializer());
+            JsonNode schemaJson = JsonSerializer.SerializeToNode(schema.AsJsonSchema());
             //The top part is the root of the emitted schema so its definitions land at the root
-            Assert.True(schemaJson.Object.ContainsKey("definitions"), $"Expected definitions at the root of the schema: {schemaJson}");
-            Assert.True(schemaJson.Object["definitions"].Object.ContainsKey("MiddleDefinition"), $"Expected the top part definition at the root of the schema: {schemaJson}");
-            JsonValue middleDefinitionJson = schemaJson.Object["definitions"].Object["MiddleDefinition"];
-            Assert.True(middleDefinitionJson.Object.ContainsKey("definitions") && middleDefinitionJson.Object["definitions"].Object.ContainsKey("InnerDefinition"), $"Expected the nested definition below the middle definition: {schemaJson}");
+            Assert.True(schemaJson.AsObject().ContainsKey("definitions"), $"Expected definitions at the root of the schema: {schemaJson}");
+            Assert.True(schemaJson .AsObject()["definitions"].AsObject().ContainsKey("MiddleDefinition"), $"Expected the top part definition at the root of the schema: {schemaJson}");
+            JsonNode middleDefinitionJson = schemaJson .AsObject()["definitions"] .AsObject()["MiddleDefinition"];
+            Assert.True(middleDefinitionJson.AsObject().ContainsKey("definitions") && middleDefinitionJson .AsObject()["definitions"].AsObject().ContainsKey("InnerDefinition"), $"Expected the nested definition below the middle definition: {schemaJson}");
         }
 
         [Fact]

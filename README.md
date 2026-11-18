@@ -1,6 +1,13 @@
 # JsonSchemaBuilder
 Simple Json Schema builder to make it faster to combine in code and to generate code for the schema making it possible to use schema first.
 
+As of version 2.0 the builder runs on [json-everything](https://github.com/gregsdennis/json-everything) (JsonSchema.Net) with [System.Text.Json](https://learn.microsoft.com/dotnet/standard/serialization/system-text-json-overview)
+instead of Manatee.Json. The emitted wire format stays draft 7: the same keyword shapes and the `definitions` vocabulary,
+so existing schemas and downstream consumers do not change. Building a part returns a `Json.Schema.JsonSchema`; every
+part also exposes `AsJsonSchemaBuilder()` so schemas can be composed before conversion. Schema parts register through
+`IJSBPart.AsJsonSchema()`, and references must be well formed RFC 3986 uri references since references are resolved
+eagerly with System.Uri.
+
 Why another code generation tool from Json Schema ? Mainly the ones made are either supporting a too old version of Json Schema or generated code with the wrong structure. I also needed dynamic code generation to make dynamic API based on defined messages for making dynamic MVC controller for a message based system so that an API can be supported on the system for others to interface with.
 
 
@@ -55,6 +62,5 @@ Code generation is built based on the above schema parts. The generation is done
 * TSQL DDL for Database First approach to development
 
 ## TODO
-* Support for later than Draft 7 schema
+* Support for later than Draft 7 schema (the json-everything engine already supports 2019-09 and 2020-12 dialects)
 * Remote schema code generation support
-* Use of Microsoft own serializer and [json-everything](https://github.com/gregsdennis/json-everything) instead of [Manatee.Json](https://github.com/gregsdennis/Manatee.Json)

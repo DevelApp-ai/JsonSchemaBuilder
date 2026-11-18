@@ -1,10 +1,11 @@
 ﻿using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.Utility.Model;
-using Manatee.Json.Schema;
+using Json.Schema;
 using System.Collections.Generic;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
     /// <summary>
     /// Convenience number definition in Json Schema.
     /// </summary>
@@ -55,24 +56,24 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder()
         {
-            JsonSchema returnSchema = InitialJsonSchema()
-                .Type(JsonSchemaType.Number);
+            JsonSchemaBuilder builder = InitialJsonSchema()
+                .Type(SchemaValueType.Number);
 
             if (MultipleOf.HasValue)
             {
-                returnSchema.MultipleOf(MultipleOf.Value);
+                builder = builder.MultipleOf((decimal)MultipleOf.Value);
             }
             if (Minimum.HasValue)
             {
-                returnSchema.Minimum(Minimum.Value);
+                builder = builder.Minimum((decimal)Minimum.Value);
             }
             if (Maximum.HasValue)
             {
-                returnSchema.Maximum(Maximum.Value);
+                builder = builder.Maximum((decimal)Maximum.Value);
             }
-            return returnSchema;
+            return builder;
         }
     }
 }
