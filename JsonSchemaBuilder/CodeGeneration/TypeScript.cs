@@ -48,6 +48,8 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private HashSet<string> _enqueuedTypeNames;
         private HashSet<string> _imports;
         private Queue<IJSBPart> _typeQueue;
+        private Queue<(string typeName, JsonValue rawSchema)> _rawTypeQueue;
+        private HashSet<string> _enqueuedRawTypeNames;
 
         private TypeScript(CodeGenerator codeGenerator, NamespaceString startNameSpace)
         {
@@ -66,6 +68,8 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             _enqueuedTypeNames = new HashSet<string>();
             _imports = new HashSet<string>();
             _typeQueue = new Queue<IJSBPart>();
+            _rawTypeQueue = new Queue<(string typeName, JsonValue rawSchema)>();
+            _enqueuedRawTypeNames = new HashSet<string>();
 
             //Types referenced through /definitions/ are emitted as own types
             //mirroring the definitions emitted by the C# generator
@@ -103,6 +107,14 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 IJSBPart part = _typeQueue.Dequeue();
                 GenerateTypeDeclaration(codeBuilder, part);
+            }
+            //Emit interfaces for schemas referenced through json pointers that
+            //have no builder parts. Nested objects enqueue more raw types while
+            //emitting, so the loop drains the queue completely
+            while (_rawTypeQueue.Count > 0)
+            {
+                (string rawTypeName, JsonValue rawSchema) = _rawTypeQueue.Dequeue();
+                GenerateRawInterface(codeBuilder, rawTypeName, rawSchema);
             }
 
             if (_imports.Count > 0)
@@ -347,7 +359,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     }
                     else if (pair.schemaValue != null)
                     {
-                        return MakeCorrectItemType(pair.schemaValue);
+                        return MakeCorrectItemType(pair.schemaValue, jsbRef.Name);
                     }
                     else
                     {
@@ -430,7 +442,16 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <summary>
         /// Maps a schema JSON fragment resolved from a file to its TypeScript type
         /// </summary>
-        private string MakeCorrectItemType(JsonValue jsonValueOfSchema)
+        /// <summary>
+        /// Maps a raw schema json value to a TypeScript type. Object schemas are
+        /// queued for interface emission through EnqueueRawType since they have
+        /// no builder parts. The nameHint is used as type name fallback for
+        /// schemas without $id or title
+        /// </summary>
+        /// <param name="jsonValueOfSchema"></param>
+        /// <param name="nameHint"></param>
+        /// <returns></returns>
+        private string MakeCorrectItemType(JsonValue jsonValueOfSchema, IdentifierString nameHint = null)
         {
             JsonObject jsonObjectOfSchema = jsonValueOfSchema.Object;
             string name = string.Empty;
@@ -442,9 +463,13 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 name = jsonValueTitle.String;
             }
+            else if (nameHint != null)
+            {
+                name = nameHint;
+            }
             else
             {
-                throw new CodeGenerationException($"MakeCorrectItemType has neither title nor id");
+                throw new CodeGenerationException($"Referenced schema has neither title nor id and no fallback name is available");
             }
             string type = string.Empty;
             if (jsonObjectOfSchema.TryGetValue("type", out JsonValue jsonValueType))
@@ -453,7 +478,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             }
             else
             {
-                throw new CodeGenerationException($"MakeCorrectItemType has no type");
+                throw new CodeGenerationException($"Referenced schema {name} has no type");
             }
             switch (type)
             {
@@ -465,10 +490,117 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 case "boolean":
                     return "boolean";
                 case "object":
-                    return TransformToTitleCase(name);
+                    return EnqueueRawType(TransformToTitleCase(name), jsonValueOfSchema);
+                case "array":
+                    if (jsonObjectOfSchema.TryGetValue("items", out JsonValue itemsValue))
+                    {
+                        //Manatee emits a single item schema as an object, the tuple
+                        //form is an array (only the first item schema is supported,
+                        //mirroring the part based generator)
+                        JsonValue itemSchema = itemsValue;
+                        bool hasItemSchema = false;
+                        if (itemsValue.Type == JsonValueType.Array && itemsValue.Array.Count > 0)
+                        {
+                            itemSchema = itemsValue.Array[0];
+                            hasItemSchema = true;
+                        }
+                        else if (itemsValue.Type == JsonValueType.Object)
+                        {
+                            hasItemSchema = true;
+                        }
+                        if (hasItemSchema)
+                        {
+                            return $"{MakeCorrectItemType(itemSchema, nameHint)}[]";
+                        }
+                    }
+                    throw new NotImplementedException($"Array schema {name} without a single items schema is not supported for reference code generation");
                 default:
                     throw new NotImplementedException($"MakeCorrectItemType for {type} has not been implemented");
             }
+        }
+
+        /// <summary>
+        /// Queues a raw schema object for interface emission and returns the type
+        /// name. The interface is emitted once per module across all files of a
+        /// generation run and never shadows an interface already emitted for a
+        /// builder part with the same name
+        /// </summary>
+        /// <param name="typeName"></param>
+        /// <param name="rawSchema"></param>
+        /// <returns></returns>
+        private string EnqueueRawType(string typeName, JsonValue rawSchema)
+        {
+            string moduleKey = $"{_startNameSpace}|{typeName}";
+            //Emitted by another file in the same module: reference the existing interface
+            if (!_codeGenerator.EmittedRawTypeNames.Add(moduleKey))
+            {
+                return typeName;
+            }
+            //A builder part interface with the same name takes precedence
+            if (_enqueuedTypeNames.Contains(typeName))
+            {
+                return typeName;
+            }
+            if (_enqueuedRawTypeNames.Add(typeName))
+            {
+                _rawTypeQueue.Enqueue((typeName, rawSchema));
+            }
+            return typeName;
+        }
+
+        /// <summary>
+        /// Emits an interface for a raw schema object referenced through a json
+        /// pointer, mirroring the member emission of the part based generator:
+        /// members not in the schema required list become optional
+        /// </summary>
+        /// <param name="codeBuilder"></param>
+        /// <param name="typeName"></param>
+        /// <param name="rawSchema"></param>
+        private void GenerateRawInterface(CodeBuilder codeBuilder, string typeName, JsonValue rawSchema)
+        {
+            JsonObject rawObject = rawSchema.Object;
+
+            string description = "Schema referenced without builder parts";
+            if (rawObject.TryGetValue("description", out JsonValue descriptionValue) && descriptionValue.Type == JsonValueType.String)
+            {
+                description = descriptionValue.String;
+            }
+
+            HashSet<string> requiredProperties = new HashSet<string>(StringComparer.Ordinal);
+            if (rawObject.TryGetValue("required", out JsonValue requiredValue) && requiredValue.Type == JsonValueType.Array)
+            {
+                foreach (JsonValue requiredEntry in requiredValue.Array)
+                {
+                    if (requiredEntry.Type == JsonValueType.String)
+                    {
+                        requiredProperties.Add(requiredEntry.String);
+                    }
+                }
+            }
+
+            GenerateComments(codeBuilder, typeName, description);
+
+            codeBuilder
+                .L($"export interface {typeName}")
+                .L("{")
+                .IndentIncrease();
+
+            if (rawObject.TryGetValue("properties", out JsonValue propertiesValue) && propertiesValue.Type == JsonValueType.Object)
+            {
+                foreach (KeyValuePair<string, JsonValue> propertyPair in propertiesValue.Object)
+                {
+                    string optional = requiredProperties.Contains(propertyPair.Key) ? string.Empty : "?";
+                    string itemType = MakeCorrectItemType(propertyPair.Value, propertyPair.Key);
+                    codeBuilder
+                        .L($"{TransformToCamelCase(propertyPair.Key)}{optional}: {itemType};")
+                        .EmptyLine();
+                }
+            }
+
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
         }
 
         #endregion

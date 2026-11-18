@@ -50,6 +50,8 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private CodeGenerator _codeGenerator;
         private Serializer _serializer;
         private HashSet<string> _emittedAllOfClassNames = new HashSet<string>();
+        private Queue<(string typeName, JsonValue rawSchema)> _rawTypeQueue;
+        private HashSet<string> _enqueuedRawTypeNames;
 
         private CSharp(CodeGenerator codeGenerator, NamespaceString startNameSpace, Serializer serializer)
         {
@@ -69,6 +71,8 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         {
             CodeBuilder codeBuilder = new CodeBuilder();
             _rootSchema = schema;
+            _rawTypeQueue = new Queue<(string typeName, JsonValue rawSchema)>();
+            _enqueuedRawTypeNames = new HashSet<string>();
             GenerateStartOfSchema(codeBuilder, schema);
             if (schema.TopPart != null)
             {
@@ -90,6 +94,14 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 List<IJSBPart> properties = new List<IJSBPart>();
                 JSBObject encasingObject = new JSBObject(schema.Name, schema.Description, props: properties);
                 GenerateCodeForBuilderPart(codeBuilder, schema.Name, encasingObject, schema.Definitions);
+            }
+            //Emit classes for schemas referenced through json pointers that have no
+            //builder parts. Nested objects enqueue more raw types while emitting,
+            //so the loop drains the queue completely
+            while (_rawTypeQueue.Count > 0)
+            {
+                (string rawTypeName, JsonValue rawSchema) = _rawTypeQueue.Dequeue();
+                GenerateRawClass(codeBuilder, rawTypeName, rawSchema);
             }
             GenerateEndOfSchema(codeBuilder, schema);
             return codeBuilder.Build();
@@ -1029,7 +1041,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 }
                 else
                 {
-                    throw new CodeGenerationException($"LookupReferencedPart failed. Might be because Uri reference is not supported other than /definitions/ or entire schema");
+                    throw new CodeGenerationException($"LookupReferencedPart failed for reference {jsonSchemaBuilderIriReference.IriReference.OriginalString}");
                 }
             }
             catch (CodeGenerationException)
@@ -1056,12 +1068,16 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         {
             if (jsonValueOfSchema.Type == JsonValueType.Object)
             {
+                string itemType = MakeCorrectItemType(jsonValueOfSchema, key);
+                string requiredMarker = jsonSchemaBuilderUriReference.IsRequired || !IsCSharpValueType(itemType)
+                    ? string.Empty
+                    : "?";
 
                 GenerateComments(codeBuilder, key, jsonSchemaBuilderUriReference);
 
                 codeBuilder
                     .L(BuildPropertyAttribute(key))
-                    .L($"public {MakeCorrectItemType(jsonValueOfSchema)} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderUriReference)}")
+                    .L($"public {itemType}{requiredMarker} {TransformToTitleCase(key)} {{ get; set; }}{GenerateDefaultIfExisting(key, jsonSchemaBuilderUriReference)}")
                     .EmptyLine();
             }
             else
@@ -1070,7 +1086,15 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             }
         }
 
-        private string MakeCorrectItemType(JsonValue jsonValueOfSchema)
+        /// <summary>
+        /// Maps a raw schema json value to a C# type. Object schemas are queued for
+        /// class emission through EnqueueRawType since they have no builder parts.
+        /// The nameHint is used as class name fallback for schemas without $id or title
+        /// </summary>
+        /// <param name="jsonValueOfSchema"></param>
+        /// <param name="nameHint"></param>
+        /// <returns></returns>
+        private string MakeCorrectItemType(JsonValue jsonValueOfSchema, IdentifierString nameHint = null)
         {
             JsonObject jsonObjectOfSchema = jsonValueOfSchema.Object;
             string name = string.Empty;
@@ -1082,9 +1106,13 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 name = jsonValueTitle.String;
             }
+            else if (nameHint != null)
+            {
+                name = nameHint;
+            }
             else
             {
-                throw new CodeGenerationException($"GenerateOrdinaryUriReference has neither title nor id");
+                throw new CodeGenerationException($"Referenced schema has neither title nor id and no fallback name is available");
             }
             string type = string.Empty;
             if (jsonObjectOfSchema.TryGetValue("type", out JsonValue jsonValueType))
@@ -1093,7 +1121,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             }
             else
             {
-                throw new CodeGenerationException($"GenerateOrdinaryUriReference has no type");
+                throw new CodeGenerationException($"Referenced schema {name} has no type");
             }
             string format = string.Empty;
             if (jsonObjectOfSchema.TryGetValue("format", out JsonValue jsonValueFormat))
@@ -1112,23 +1140,162 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                         case "time":
                         case "date":
                         case "datetime":
+                        case "date-time":
                             return "DateTime";
                         case "email":
                             return "Email";
+                        case "uri":
+                            return "Uri";
+                        case "uuid":
+                            return "Guid";
+                        case "phone":
+                            return "PhoneNumber";
+                        default:
+                            //The format vocabulary is open ended, unknown string formats map to string
+                            return "string";
                     }
-                    break;
                 case "boolean":
                     return "bool";
                 case "object":
-                    return TransformToTitleCase(name);
+                    return EnqueueRawType(TransformToTitleCase(name), jsonValueOfSchema);
                 case "number":
                     return "double";
                 case "integer":
                     return "long";
+                case "array":
+                    if (jsonObjectOfSchema.TryGetValue("items", out JsonValue itemsValue))
+                    {
+                        //Manatee emits a single item schema as an object, the tuple
+                        //form is an array (only the first item schema is supported,
+                        //mirroring the part based generator)
+                        JsonValue itemSchema = itemsValue;
+                        bool hasItemSchema = false;
+                        if (itemsValue.Type == JsonValueType.Array && itemsValue.Array.Count > 0)
+                        {
+                            itemSchema = itemsValue.Array[0];
+                            hasItemSchema = true;
+                        }
+                        else if (itemsValue.Type == JsonValueType.Object)
+                        {
+                            hasItemSchema = true;
+                        }
+                        if (hasItemSchema)
+                        {
+                            return $"List<{MakeCorrectItemType(itemSchema, nameHint)}>";
+                        }
+                    }
+                    throw new NotImplementedException($"Array schema {name} without a single items schema is not supported for reference code generation");
+                default:
+                    throw new NotImplementedException($"Type {type} with name {name} and format {format} is not supported");
             }
-            throw new NotImplementedException($"Type {type} with name {name} and format {format} is not supported");
         }
-    
+
+        /// <summary>
+        /// Queues a raw schema object for class emission and returns the class name.
+        /// The class is emitted once per module across all files of a generation run
+        /// </summary>
+        /// <param name="typeName"></param>
+        /// <param name="rawSchema"></param>
+        /// <returns></returns>
+        private string EnqueueRawType(string typeName, JsonValue rawSchema)
+        {
+            string moduleKey = $"{_startNameSpace}|{typeName}";
+            //Emitted by another file in the same module: reference the existing class
+            if (!_codeGenerator.EmittedRawTypeNames.Add(moduleKey))
+            {
+                return typeName;
+            }
+            if (_enqueuedRawTypeNames.Add(typeName))
+            {
+                _rawTypeQueue.Enqueue((typeName, rawSchema));
+            }
+            return typeName;
+        }
+
+        /// <summary>
+        /// Emits a class for a raw schema object referenced through a json pointer.
+        /// Mirrors the property emission of the part based generator: value types
+        /// that are not in the schema required list become nullable
+        /// </summary>
+        /// <param name="codeBuilder"></param>
+        /// <param name="typeName"></param>
+        /// <param name="rawSchema"></param>
+        private void GenerateRawClass(CodeBuilder codeBuilder, string typeName, JsonValue rawSchema)
+        {
+            JsonObject rawObject = rawSchema.Object;
+
+            string description = "Schema referenced without builder parts";
+            if (rawObject.TryGetValue("description", out JsonValue descriptionValue) && descriptionValue.Type == JsonValueType.String)
+            {
+                description = descriptionValue.String;
+            }
+            List<string> commentLines = GenerateCommentLines(typeName, description, minSplitLength: 70, maxSplitLength: 90);
+
+            codeBuilder
+                .L("/// <summary>");
+            foreach (string commentLine in commentLines)
+            {
+                codeBuilder.L($"/// {commentLine}");
+            }
+            codeBuilder
+                .L("/// </summary>")
+                .L($"public partial class {typeName}")
+                .L("{")
+                .IndentIncrease();
+
+            HashSet<string> requiredProperties = new HashSet<string>(StringComparer.Ordinal);
+            if (rawObject.TryGetValue("required", out JsonValue requiredValue) && requiredValue.Type == JsonValueType.Array)
+            {
+                foreach (JsonValue requiredEntry in requiredValue.Array)
+                {
+                    if (requiredEntry.Type == JsonValueType.String)
+                    {
+                        requiredProperties.Add(requiredEntry.String);
+                    }
+                }
+            }
+
+            if (rawObject.TryGetValue("properties", out JsonValue propertiesValue) && propertiesValue.Type == JsonValueType.Object)
+            {
+                foreach (KeyValuePair<string, JsonValue> propertyPair in propertiesValue.Object)
+                {
+                    string itemType = MakeCorrectItemType(propertyPair.Value, propertyPair.Key);
+                    string requiredMarker = requiredProperties.Contains(propertyPair.Key) || !IsCSharpValueType(itemType)
+                        ? string.Empty
+                        : "?";
+                    codeBuilder
+                        .L(BuildPropertyAttribute(propertyPair.Key))
+                        .L($"public {itemType}{requiredMarker} {TransformToTitleCase(propertyPair.Key)} {{ get; set; }}")
+                        .EmptyLine();
+                }
+            }
+
+            codeBuilder
+                .IndentDecrease()
+                .L("}");
+        }
+
+        /// <summary>
+        /// True for C# value types produced by raw schema mapping, which become
+        /// nullable when the schema does not require them
+        /// </summary>
+        /// <param name="itemType"></param>
+        /// <returns></returns>
+        private bool IsCSharpValueType(string itemType)
+        {
+            switch (itemType)
+            {
+                case "long":
+                case "double":
+                case "bool":
+                case "DateTime":
+                case "Guid":
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
 
         #endregion
 

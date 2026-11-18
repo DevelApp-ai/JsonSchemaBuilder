@@ -638,6 +638,101 @@ namespace JsonSchemaBuilder.Test
         }
 
 
+        [Fact]
+        public void TestJsonPointerRefCSharpCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new JsonPointerRefJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.CSharp);
+
+            (string fileName, string code) pointerRef = generated.FirstOrDefault(g => g.fileName.EndsWith("JsonPointerRef.cs"));
+            Assert.False(string.IsNullOrEmpty(pointerRef.code), "Expected generated code for JsonPointerRef.cs");
+            //The top part class
+            Assert.Contains("public partial class JsonPointerAsATopPart", pointerRef.code);
+            //A raw scalar subschema resolves through a deep json pointer
+            Assert.Contains("public string StreetPointer { get; set; }", pointerRef.code);
+            //The raw object subschema of the allOf pointer is emitted as a raw class
+            Assert.Contains("public partial class PointerPartOne", pointerRef.code);
+            Assert.Contains("[JsonProperty(\"street\")]", pointerRef.code);
+            Assert.Contains("public string Street { get; set; }", pointerRef.code);
+            //A raw array property resolves with its item type
+            Assert.Contains("public List<string> TagListPointer { get; set; }", pointerRef.code);
+            //A pointer that goes through a definition into its properties resolves against the emitted json
+            Assert.Contains("public string DefinitionValuePointer { get; set; }", pointerRef.code);
+        }
+
+        [Fact]
+        public void TestJsonPointerRefTypeScriptCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new JsonPointerRefJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.TypeScript);
+
+            (string fileName, string code) pointerRef = generated.FirstOrDefault(g => g.fileName.EndsWith("JsonPointerRef.ts"));
+            Assert.False(string.IsNullOrEmpty(pointerRef.code), "Expected generated code for JsonPointerRef.ts");
+            //The raw object subschema of the allOf pointer is emitted as a raw interface
+            Assert.Contains("export interface PointerPartOne", pointerRef.code);
+            Assert.Contains("street: string;", pointerRef.code);
+            Assert.Contains("city?: string;", pointerRef.code);
+            //Raw scalar and array references map to their wire types
+            Assert.Contains("streetPointer: string;", pointerRef.code);
+            Assert.Contains("tagListPointer?: string[];", pointerRef.code);
+            Assert.Contains("definitionValuePointer: string;", pointerRef.code);
+        }
+
+        [Fact]
+        public void TestJsonPointerRefVBCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new JsonPointerRefJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.VB);
+
+            (string fileName, string code) pointerRef = generated.FirstOrDefault(g => g.fileName.EndsWith("JsonPointerRef.vb"));
+            Assert.False(string.IsNullOrEmpty(pointerRef.code), "Expected generated code for JsonPointerRef.vb");
+            //The raw object subschema of the allOf pointer is emitted as a raw class
+            Assert.Contains("Partial Public Class PointerPartOne", pointerRef.code);
+            Assert.Contains("Public Property Street As String", pointerRef.code);
+            //A raw array property resolves with its item type
+            Assert.Contains("Public Property TagListPointer As List(Of String)", pointerRef.code);
+            //A deep scalar pointer resolves to a plain string property
+            Assert.Contains("Public Property StreetPointer As String", pointerRef.code);
+        }
+
+        [Fact]
+        public void TestJsonPointerRefJavaCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new JsonPointerRefJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.Java);
+
+            (string fileName, string code) pointerRef = generated.FirstOrDefault(g => g.fileName.EndsWith("JsonPointerRef.java"));
+            Assert.False(string.IsNullOrEmpty(pointerRef.code), "Expected generated code for JsonPointerRef.java");
+            //The raw object subschema of the allOf pointer is emitted as a raw class
+            Assert.Contains("class PointerPartOne", pointerRef.code);
+            Assert.Contains("@JsonProperty(\"street\")", pointerRef.code);
+            Assert.Contains("private String street;", pointerRef.code);
+            //A raw array property resolves with its item type
+            Assert.Contains("private List<String> tagListPointer;", pointerRef.code);
+        }
+
+        [Fact]
+        public void TestJsonPointerRefPHPCodeGeneration()
+        {
+            CodeGenerator codeGenerator = new CodeGenerator("TestApplicationRoot", "TestJsonSchemaApplicationRoot");
+            codeGenerator.Register(new JsonPointerRefJsonSchema());
+            List<(string fileName, string code)> generated = codeGenerator.Generate(Code.PHP);
+
+            (string fileName, string code) pointerRef = generated.FirstOrDefault(g => g.fileName.EndsWith("JsonPointerRef.php"));
+            Assert.False(string.IsNullOrEmpty(pointerRef.code), "Expected generated code for JsonPointerRef.php");
+            //The raw object subschema of the allOf pointer is emitted as a raw class.
+            //Required members keep their type, non required members become nullable
+            Assert.Contains("class PointerPartOne", pointerRef.code);
+            Assert.Contains("public string $street;", pointerRef.code);
+            Assert.Contains("public ?string $city;", pointerRef.code);
+            //A raw array reference keeps the array type and the reference property is nullable
+            Assert.Contains("public ?array $tagListPointer;", pointerRef.code);
+        }
+
         #region Assembly load all schemas and write
 
         private static void LoadAllJsonSchemaBuildersAndGenerateCSharpCodeToFile(string applicationRoot, string jsonSchemaApplicationRoot)
@@ -739,6 +834,14 @@ namespace JsonSchemaBuilder.Test
             CodeGenerator codeGenerator = new CodeGenerator(applicationRoot, jsonSchemaApplicationRoot);
             foreach (Type codeDefinedType in GetInterfaceTypes(typeof(IJsonSchemaDefinition)))
             {
+                //The TSQL generator resolves only references that map to registered
+                //builder parts (whole schemas and /definitions/ fragments), raw json
+                //pointer fragments are not representable in DDL, so the json pointer
+                //reference schema family is excluded from the assembly wide TSQL run
+                if (codeDefinedType == typeof(JsonPointerRefJsonSchema))
+                {
+                    continue;
+                }
                 IJsonSchemaDefinition jsonSchema = GetJsonSchemaInstance(codeDefinedType);
                 codeGenerator.Register(jsonSchema);
             }
@@ -1414,6 +1517,74 @@ namespace JsonSchemaBuilder.Test
             get
             {
                 return "Used to test definitions on other levels than the top schema";
+            }
+        }
+
+        public override NamespaceString Module
+        {
+            get
+            {
+                return "Funny.Onion";
+            }
+        }
+    }
+
+    public class JsonPointerRefJsonSchema : AbstractJsonSchema
+    {
+        protected override JSBSchema BuildJsonSchema()
+        {
+            //An object property whose subschemas are referenced deeper through
+            //json pointers. The pointers resolve against the emitted schema json,
+            //so they target the camelCase wire keys of the emitted properties
+            JSBString street = new JSBString("Street", "The street of the address", maxLength: 128, isRequired: true);
+            JSBString city = new JSBString("City", "The city of the address", maxLength: 64);
+            JSBObject address = new JSBObject("Address", "An address referenced through json pointers", props: new List<IJSBPart>() { street, city });
+
+            //An allOf property: the part based generators merge its subschemas into
+            //one class, so a pointer at a single subschema resolves to a raw object
+            //schema that is emitted as a raw class without colliding with the
+            //merged class of the property itself
+            JSBObject pointerPartOne = new JSBObject("PointerPartOne", "First allOf subschema referenced through a json pointer",
+                props: new List<IJSBPart>() { street, city });
+            JSBObject pointerPartTwo = new JSBObject("PointerPartTwo", "Second allOf subschema",
+                props: new List<IJSBPart>() { new JSBString("ZipCode", "The zip code of the address", maxLength: 16) });
+            JSBAllOf mergedHolder = new JSBAllOf("MergedHolder", "An allOf of two object subschemas",
+                new List<IJSBPart>() { pointerPartOne, pointerPartTwo });
+
+            //An array property referenced as a whole, exercising the raw array mapping
+            JSBArray plainTags = new JSBArray("PlainTags", "An array of plain string tags",
+                items: new List<IJSBPart>() { new JSBString("PlainTag", "A single tag", maxLength: 32) });
+
+            //A definition whose inner property is referenced through a pointer that
+            //goes through the definitions container and its properties
+            JSBString definitionValue = new JSBString("ValueInDefinition", "A value in a definition", maxLength: 32, isRequired: true);
+            JSBObject nestedDefinition = new JSBObject("NestedDefinition", "A definition with an object property",
+                props: new List<IJSBPart>() { definitionValue });
+
+            List<IJSBPart> props = new List<IJSBPart>();
+            props.Add(new JSBString("PlainProperty", "A plain property", maxLength: 100, isRequired: true));
+            props.Add(address);
+            props.Add(mergedHolder);
+            props.Add(plainTags);
+            props.Add(new JSBRef("StreetPointer", "References the street property through a json pointer",
+                iriReference: new Uri("#/properties/address/properties/street", UriKind.Relative), isRequired: true));
+            props.Add(new JSBRef("AllOfZeroPointer", "References the first allOf subschema through a json pointer",
+                iriReference: new Uri("#/properties/mergedHolder/allOf/0", UriKind.Relative), isRequired: true));
+            props.Add(new JSBRef("TagListPointer", "References the plain tags array through a json pointer",
+                iriReference: new Uri("#/properties/plainTags", UriKind.Relative)));
+            props.Add(new JSBRef("DefinitionValuePointer", "References a value inside a definition through a json pointer",
+                iriReference: new Uri("#/definitions/nestedDefinition/properties/valueInDefinition", UriKind.Relative), isRequired: true));
+            JSBObject objectPart = new JSBObject("JsonPointerAsATopPart", Description, props: props);
+
+            return new JSBSchema("JsonPointerAsATopPart", Description, topPart: objectPart,
+                defs: new List<IJSBPart>() { nestedDefinition });
+        }
+
+        public override string Description
+        {
+            get
+            {
+                return "Used to test RFC 6901 json pointer references into the schema itself";
             }
         }
 
