@@ -27,7 +27,20 @@ My intention is to support all parts of the official Json Schema Draft 7 and som
 * **Time**
 * **Uri/UriReference/Iri/IriReference**
 
-  This has the limitation that references can only be referencing part of definitions or entire schema. Remote schemas are downloaded but code is not generated.
+  References support RFC 6901 JSON Pointer fragments (`#/definitions/...`, `#/properties/...`,
+  `#/allOf/0` and any other pointer into the schema) as well as entire schemas. Fragments that
+  resolve to a builder part use that part directly; fragments that resolve deeper into the
+  emitted schema json (for example into `properties` or an `allOf` entry) map the raw subschema:
+  objects are emitted as a raw class/interface with the schema `required` list driving
+  nullability, arrays map to their item type and formats map like their builder part
+  counterparts. References that stay inside a `definitions` container keep the historical
+  lenient key matching (exact, then TitleCase, then camelCase).
+
+  Limitations: raw enum subschemas map to their base type, raw `allOf`/`anyOf`/`oneOf`
+  subschemas are not merged (NotImplemented), arrays without a single item schema are not
+  supported, the TSQL generator resolves only references that map to registered builder parts
+  (whole schemas and `/definitions/` fragments), and the C# Entities generator has no reference
+  support. Remote schemas are downloaded but code is not generated from them.
 
 ## Code generation
 Code generation is built based on the above schema parts. The generation is done in batch mode

@@ -62,6 +62,9 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private HashSet<string> _enqueuedTypeNames;
         private HashSet<string> _uses;
         private Queue<IJSBPart> _typeQueue;
+        //Raw schema objects referenced through json pointers, queued for class emission
+        private Queue<(string typeName, JsonValue rawSchema)> _rawTypeQueue;
+        private HashSet<string> _enqueuedRawTypeNames;
 
         private PHP(CodeGenerator codeGenerator, NamespaceString startNameSpace)
         {
@@ -80,6 +83,8 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             _enqueuedTypeNames = new HashSet<string>();
             _uses = new HashSet<string>();
             _typeQueue = new Queue<IJSBPart>();
+            _rawTypeQueue = new Queue<(string typeName, JsonValue rawSchema)>();
+            _enqueuedRawTypeNames = new HashSet<string>();
 
             //Types referenced through /definitions/ are emitted as own types
             //mirroring the definitions emitted by the C# generator
@@ -117,6 +122,12 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 IJSBPart part = _typeQueue.Dequeue();
                 GenerateTypeDeclaration(codeBuilder, part);
+            }
+            //Emit classes queued for raw schemas referenced through json pointers
+            while (_rawTypeQueue.Count > 0)
+            {
+                (string rawTypeName, JsonValue rawSchema) = _rawTypeQueue.Dequeue();
+                GenerateRawClass(codeBuilder, rawTypeName, rawSchema);
             }
 
             //The use statements are collected while the types are generated,
@@ -418,7 +429,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     }
                     else if (pair.schemaValue != null)
                     {
-                        return MakeCorrectItemType(pair.schemaValue);
+                        return MakeCorrectItemType(pair.schemaValue, jsonSchemaBuilderPart.Name);
                     }
                     else
                     {
@@ -517,9 +528,12 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         }
 
         /// <summary>
-        /// Maps a schema JSON fragment resolved from a file to its PHP type
+        /// Maps a schema JSON fragment resolved from a reference to its PHP type.
+        /// Object schemas are queued for class emission through EnqueueRawType since
+        /// they have no builder parts. The nameHint is used as class name fallback
+        /// for schemas without $id or title
         /// </summary>
-        private string MakeCorrectItemType(JsonValue jsonValueOfSchema)
+        private string MakeCorrectItemType(JsonValue jsonValueOfSchema, IdentifierString nameHint = null)
         {
             JsonObject jsonObjectOfSchema = jsonValueOfSchema.Object;
             string name = string.Empty;
@@ -531,9 +545,13 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             {
                 name = jsonValueTitle.String;
             }
+            else if (nameHint != null)
+            {
+                name = nameHint;
+            }
             else
             {
-                throw new CodeGenerationException($"MakeCorrectItemType has neither title nor id");
+                throw new CodeGenerationException($"Referenced schema has neither title nor id and no fallback name is available");
             }
             string type = string.Empty;
             if (jsonObjectOfSchema.TryGetValue("type", out JsonValue jsonValueType))
@@ -542,12 +560,33 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             }
             else
             {
-                throw new CodeGenerationException($"MakeCorrectItemType has no type");
+                throw new CodeGenerationException($"Referenced schema {name} has no type");
+            }
+            string format = string.Empty;
+            if (jsonObjectOfSchema.TryGetValue("format", out JsonValue jsonValueFormat))
+            {
+                format = jsonValueFormat.String;
             }
             switch (type)
             {
                 case "string":
-                    return "string";
+                    if (string.IsNullOrWhiteSpace(format))
+                    {
+                        return "string";
+                    }
+                    switch (format)
+                    {
+                        case "date":
+                        case "datetime":
+                        case "date-time":
+                        case "time":
+                            //PHP has no date only value object, so the immutable DateTime is used
+                            return "\\DateTimeImmutable";
+                        default:
+                            //The format vocabulary is open ended, PHP has no built-in
+                            //equivalents: the wire format is a JSON string
+                            return "string";
+                    }
                 case "integer":
                     return "int";
                 case "number":
@@ -555,10 +594,111 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 case "boolean":
                     return "bool";
                 case "object":
-                    return TransformToTitleCase(name);
+                    return EnqueueRawType(TransformToTitleCase(name), jsonValueOfSchema);
+                case "array":
+                    //The item type is resolved for its queue side effect (raw object
+                    //items enqueue their class), the type stays array. Manatee emits
+                    //a single item schema as an object, the tuple form is an array
+                    //mirroring the part based generator
+                    if (jsonObjectOfSchema.TryGetValue("items", out JsonValue itemsValue))
+                    {
+                        JsonValue itemSchema = itemsValue;
+                        bool hasItemSchema = false;
+                        if (itemsValue.Type == JsonValueType.Array && itemsValue.Array.Count > 0)
+                        {
+                            itemSchema = itemsValue.Array[0];
+                            hasItemSchema = true;
+                        }
+                        else if (itemsValue.Type == JsonValueType.Object)
+                        {
+                            hasItemSchema = true;
+                        }
+                        if (hasItemSchema)
+                        {
+                            MakeCorrectItemType(itemSchema, nameHint);
+                            return "array";
+                        }
+                    }
+                    throw new NotImplementedException($"Array schema {name} without a single items schema is not supported for reference code generation");
                 default:
-                    throw new NotImplementedException($"MakeCorrectItemType for {type} has not been implemented");
+                    throw new NotImplementedException($"Type {type} with name {name} and format {format} is not supported");
             }
+        }
+
+        /// <summary>
+        /// Queues a raw schema object for class emission and returns the class name.
+        /// The class is emitted once per module across all files of a generation run
+        /// </summary>
+        /// <param name="typeName"></param>
+        /// <param name="rawSchema"></param>
+        /// <returns></returns>
+        private string EnqueueRawType(string typeName, JsonValue rawSchema)
+        {
+            string moduleKey = $"{_startNameSpace}|{typeName}";
+            //Emitted by another file in the same module: reference the existing class
+            if (!_codeGenerator.EmittedRawTypeNames.Add(moduleKey))
+            {
+                return typeName;
+            }
+            if (_enqueuedRawTypeNames.Add(typeName))
+            {
+                _rawTypeQueue.Enqueue((typeName, rawSchema));
+            }
+            return typeName;
+        }
+
+        /// <summary>
+        /// Emits a class for a raw schema object referenced through a json pointer.
+        /// Mirrors the property emission of the part based generator: properties
+        /// that are not in the schema required list become nullable
+        /// </summary>
+        /// <param name="codeBuilder"></param>
+        /// <param name="typeName"></param>
+        /// <param name="rawSchema"></param>
+        private void GenerateRawClass(CodeBuilder codeBuilder, string typeName, JsonValue rawSchema)
+        {
+            JsonObject rawObject = rawSchema.Object;
+
+            string description = "Schema referenced without builder parts";
+            if (rawObject.TryGetValue("description", out JsonValue descriptionValue) && descriptionValue.Type == JsonValueType.String)
+            {
+                description = descriptionValue.String;
+            }
+            GenerateComments(codeBuilder, typeName, description, null);
+
+            HashSet<string> requiredProperties = new HashSet<string>(StringComparer.Ordinal);
+            if (rawObject.TryGetValue("required", out JsonValue requiredValue) && requiredValue.Type == JsonValueType.Array)
+            {
+                foreach (JsonValue requiredEntry in requiredValue.Array)
+                {
+                    if (requiredEntry.Type == JsonValueType.String)
+                    {
+                        requiredProperties.Add(requiredEntry.String);
+                    }
+                }
+            }
+
+            codeBuilder
+                .L($"class {typeName}")
+                .L("{")
+                .IndentIncrease();
+
+            if (rawObject.TryGetValue("properties", out JsonValue propertiesValue) && propertiesValue.Type == JsonValueType.Object)
+            {
+                foreach (KeyValuePair<string, JsonValue> propertyPair in propertiesValue.Object)
+                {
+                    string itemType = MakeCorrectItemType(propertyPair.Value, propertyPair.Key);
+                    string nullable = requiredProperties.Contains(propertyPair.Key) ? string.Empty : "?";
+                    codeBuilder
+                        .L($"public {nullable}{itemType} ${TransformToCamelCase(propertyPair.Key)};")
+                        .EmptyLine();
+                }
+            }
+
+            codeBuilder
+                .IndentDecrease()
+                .L("}")
+                .EmptyLine();
         }
 
         #endregion

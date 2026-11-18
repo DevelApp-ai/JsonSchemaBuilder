@@ -3,6 +3,7 @@ using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
 using Manatee.Json;
 using Manatee.Json.Schema;
+using Manatee.Json.Serialization;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -14,6 +15,13 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
     public class CodeGenerator
     {
         public Dictionary<string, IJsonSchemaDefinition> RegisteredJsonSchemas { get; } = new Dictionary<string, IJsonSchemaDefinition>();
+
+        /// <summary>
+        /// Raw schema class names (keyed 'module|typeName') that have already been
+        /// emitted somewhere in this generation run, so a raw schema referenced by
+        /// several registered schemas in the same module is only emitted once
+        /// </summary>
+        public HashSet<string> EmittedRawTypeNames { get; } = new HashSet<string>();
 
         public CodeGenerator(string applicationRoot, string jsonSchemaApplicationRoot)
         {
@@ -265,11 +273,15 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     {
                         return (referencedPart, null);
                     }
+                    //fall through: a /definitions/ fragment the part tree cannot resolve
+                    //resolves against the emitted schema json below
                 }
-                else
+                else if (string.IsNullOrWhiteSpace(jSBRef.Fragment) ||
+                    jSBRef.Fragment.Equals("/"))
                 {
                     return (jsonSchemaDefinition.JsonSchemaBuilderSchema, null);
                 }
+                return (null, ResolveJsonPointer(ToJsonValue(jsonSchemaDefinition.JsonSchemaBuilderSchema), jSBRef.Fragment));
             }
 
             //Search for the schema file as .schema.json and .json and load it when found
@@ -287,39 +299,79 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
             // make a schema and generate code from that
             JsonValue jsonValueOfSchema = JsonValue.Parse(schemaString);
-            if (string.IsNullOrWhiteSpace(jSBRef.Fragment) ||
-                jSBRef.Fragment.Equals("/"))
+            return (null, ResolveJsonPointer(jsonValueOfSchema, jSBRef.Fragment));
+        }
+
+        /// <summary>
+        /// Serializes a builder schema to its emitted json so reference fragments
+        /// can be resolved against exactly what a schema consumer sees
+        /// </summary>
+        /// <param name="schema"></param>
+        /// <returns></returns>
+        public JsonValue ToJsonValue(JSBSchema schema)
+        {
+            return new JsonSerializer().Serialize(schema.AsJsonSchema());
+        }
+
+        /// <summary>
+        /// Evaluates a reference fragment as an RFC 6901 JSON Pointer (without the
+        /// leading '#') against a schema given as JsonValue. An empty fragment or
+        /// '/' returns the entire schema. Keys inside a definitions container keep
+        /// the historical lenient matching (exact, then TitleCase, then camelCase)
+        /// since builder parts name definitions in TitleCase while authored
+        /// references usually use camelCase. All other segments match exactly
+        /// </summary>
+        /// <param name="schemaValue"></param>
+        /// <param name="fragment"></param>
+        /// <returns></returns>
+        public JsonValue ResolveJsonPointer(JsonValue schemaValue, string fragment)
+        {
+            if (string.IsNullOrWhiteSpace(fragment) || fragment == "/")
             {
-                return (null, jsonValueOfSchema);
+                return schemaValue;
             }
-            else if (jSBRef.Fragment.ToLowerInvariant().StartsWith("/definitions/"))
+            string trimmedFragment = fragment.StartsWith("/") ? fragment.Substring(1) : fragment;
+            string[] rawSegments = trimmedFragment.Split('/');
+            JsonValue current = schemaValue;
+            //True while the segment being looked up is a key inside a definitions container
+            bool insideDefinitions = false;
+            foreach (string rawSegment in rawSegments)
             {
-                //Walk the raw schema json so nested definition paths like
-                //#/definitions/outer/definitions/inner resolve as well
-                string[] segments = jSBRef.Fragment.Split(new[] { "/definitions/" }, StringSplitOptions.RemoveEmptyEntries);
-                JsonValue currentSchemaValue = jsonValueOfSchema;
-                foreach (string segment in segments)
+                string segment = rawSegment.Replace("~1", "/").Replace("~0", "~");
+                if (current.Type == JsonValueType.Object)
                 {
-                    string definitionKey = TransformToTitleCase(segment);
-                    if (currentSchemaValue.Type == JsonValueType.Object
-                        && currentSchemaValue.Object.TryGetValue("definitions", out JsonValue definitionsValue)
-                        && definitionsValue.Type == JsonValueType.Object
-                        && (definitionsValue.Object.TryGetValue(segment, out JsonValue definitionValue)
-                            || definitionsValue.Object.TryGetValue(definitionKey, out definitionValue)))
+                    JsonValue next = null;
+                    if (!current.Object.TryGetValue(segment, out next) && insideDefinitions)
                     {
-                        currentSchemaValue = definitionValue;
+                        string titleKey = TransformToTitleCase(segment);
+                        string camelKey = TransformToCamelCase(segment);
+                        if (!current.Object.TryGetValue(titleKey, out next))
+                        {
+                            current.Object.TryGetValue(camelKey, out next);
+                        }
                     }
-                    else
+                    if (next == null)
                     {
-                        throw new CodeGenerationException($"Could not find {segment} in the definitions of the schema");
+                        throw new CodeGenerationException($"Json reference fragment '{fragment}' does not resolve: '{segment}' was not found");
                     }
+                    insideDefinitions = segment == "definitions";
+                    current = next;
                 }
-                return (null, currentSchemaValue);
+                else if (current.Type == JsonValueType.Array)
+                {
+                    if (!int.TryParse(segment, out int index) || index < 0 || index >= current.Array.Count)
+                    {
+                        throw new CodeGenerationException($"Json reference fragment '{fragment}' does not resolve: '{segment}' is not a valid array index");
+                    }
+                    insideDefinitions = false;
+                    current = current.Array[index];
+                }
+                else
+                {
+                    throw new CodeGenerationException($"Json reference fragment '{fragment}' does not resolve: cannot descend into a scalar at '{segment}'");
+                }
             }
-            else
-            {
-                throw new NotImplementedException($"Uri reference is not supported other than /definitions/ or entire schema");
-            }
+            return current;
         }
 
         /// <summary>
