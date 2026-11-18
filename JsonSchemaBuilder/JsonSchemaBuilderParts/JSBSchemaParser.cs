@@ -2,8 +2,10 @@ using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.Utility.Model;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
@@ -57,11 +59,21 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             { "date", @"^(\d{4})-(\d{2})-(\d{2})$" },
             { "time", @"^(\d{2})\:(\d{2})\:(\d{2})(\.\d{1,7})?([+-](\d{2})\:(\d{2}))?$" },
             { "date-time", @"^(\d{4})-(\d{2})-(\d{2})T(\d{2})\:(\d{2})\:(\d{2})(\.\d{1,7})?([+-](\d{2})\:(\d{2}))?$" },
-            { "email", @"^[a-z0-9\._%+!$&*=^|~#%{}/\\-]+@([a-z0-9\-]+\.){1,}([a-z]{2,22})$" },
+            { "email", @"^[a-z0-9\._%+!$&*=^|~#%{}/\-]+@([a-z0-9\-]+\.){1,}([a-z]{2,22})$" },
             { "uuid", @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$" },
             { "byte", @"^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$" },
             { "uri", null }
         };
+
+        /// <summary>
+        /// The canonical default value emission formats of the typed date and
+        /// time parts. A default is only mapped into the typed part when the
+        /// default string is the exact canonical emission, which guarantees
+        /// the re-emitted document never silently shifts fractions or offsets
+        /// </summary>
+        private const string DateDefaultFormat = "yyyy-MM-dd";
+        private const string TimeDefaultFormat = "HH:mm:ss.fffffffzzz";
+        private const string DateTimeDefaultFormat = "yyyy-MM-ddTHH:mm:ss.fffffffzzz";
 
         /// <summary>
         /// Parses a whole schema document into a JSBSchema. The document name is
@@ -414,30 +426,21 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 
             //Typed convenience mapping: only when the format matches a typed part,
             //the pattern is absent or exactly the native pattern of the typed part
-            //and no other constraints exist that the typed part cannot carry
+            //and no other constraints exist that the typed part cannot carry. A
+            //default value is mapped into the typed part when the typed part can
+            //carry it without changing the emitted wire, otherwise the part
+            //degrades to a plain JSBString which stays wire faithful
             if (format != null && TYPED_STRING_FORMATS.ContainsKey(format))
             {
                 bool patternMatchesNative = pattern == null || string.Equals(pattern, TYPED_STRING_FORMATS[format], StringComparison.Ordinal);
                 bool noOtherConstraints = minLength == 0 && maxLength == null && rawEnums.Count == 0
-                    && examples.Count == 0 && defaultValueNode == null;
+                    && examples.Count == 0;
                 if (patternMatchesNative && noOtherConstraints)
                 {
-                    switch (format)
+                    IJSBPart typedPart = TryCreateTypedStringPart(format, name, description, defaultValueNode, isRequired);
+                    if (typedPart != null)
                     {
-                        case "date":
-                            return new JSBDate(name, description, null, isRequired);
-                        case "time":
-                            return new JSBTime(name, description, null, isRequired);
-                        case "date-time":
-                            return new JSBDateTime(name, description, null, isRequired);
-                        case "email":
-                            return new JSBEmail(name, description, null, isRequired);
-                        case "uuid":
-                            return new JSBGuid(name, description, null, isRequired);
-                        case "uri":
-                            return new JSBUri(name, description, null, isRequired);
-                        case "byte":
-                            return new JSBBase64String(name, description, null, isRequired);
+                        return typedPart;
                     }
                 }
             }
@@ -459,6 +462,85 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
 
             return new JSBString(name, description, format, minLength, maxLength, pattern, defaultValue, examplesList, enums, isRequired);
+        }
+
+        /// <summary>
+        /// Creates the typed convenience part for a supported format when the
+        /// subschema can be represented by it. A default value is only mapped
+        /// into the typed part when it is a string and the typed part can
+        /// carry it without changing the emitted wire: string based defaults
+        /// (email, uuid, byte, uri) must match the native pattern, date and
+        /// date-time defaults must be exactly the canonical emission of the
+        /// typed part and time defaults must additionally re-emit through
+        /// UTC so offsets never silently shift on re-emission. Returns null
+        /// when the typed part cannot carry the subschema and the caller
+        /// should fall back to a plain JSBString
+        /// </summary>
+        private static IJSBPart TryCreateTypedStringPart(string format, IdentifierString name, string description, JsonNode defaultValueNode, bool isRequired)
+        {
+            string typedDefault = null;
+            if (defaultValueNode != null)
+            {
+                JsonValue defaultValue = defaultValueNode as JsonValue;
+                if (defaultValue == null || !defaultValue.TryGetValue(out string rawDefault))
+                {
+                    return null;
+                }
+                string nativePattern = TYPED_STRING_FORMATS[format];
+                if (nativePattern != null && !Regex.IsMatch(rawDefault, nativePattern))
+                {
+                    return null;
+                }
+                typedDefault = rawDefault;
+            }
+
+            switch (format)
+            {
+                case "date":
+                    if (typedDefault == null)
+                    {
+                        return new JSBDate(name, description, null, isRequired);
+                    }
+                    if (!DateTime.TryParseExact(typedDefault, DateDefaultFormat, CultureInfo.InvariantCulture, DateTimeStyles.None, out DateTime dateValue))
+                    {
+                        return null;
+                    }
+                    return new JSBDate(name, description, dateValue, isRequired);
+                case "time":
+                    if (typedDefault == null)
+                    {
+                        return new JSBTime(name, description, null, isRequired);
+                    }
+                    if (!DateTime.TryParseExact(typedDefault, TimeDefaultFormat, CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime timeValue)
+                        || !string.Equals(timeValue.ToString(TimeDefaultFormat, CultureInfo.InvariantCulture), typedDefault, StringComparison.Ordinal))
+                    {
+                        return null;
+                    }
+                    return new JSBTime(name, description, timeValue, isRequired);
+                case "date-time":
+                    if (typedDefault == null)
+                    {
+                        return new JSBDateTime(name, description, null, isRequired);
+                    }
+                    if (!DateTime.TryParseExact(typedDefault, DateTimeDefaultFormat, CultureInfo.InvariantCulture,
+                            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out DateTime dateTimeValue)
+                        || !string.Equals(dateTimeValue.ToString(DateTimeDefaultFormat, CultureInfo.InvariantCulture), typedDefault, StringComparison.Ordinal))
+                    {
+                        return null;
+                    }
+                    return new JSBDateTime(name, description, dateTimeValue, isRequired);
+                case "email":
+                    return new JSBEmail(name, description, typedDefault, isRequired);
+                case "uuid":
+                    return new JSBGuid(name, description, typedDefault, isRequired);
+                case "uri":
+                    return new JSBUri(name, description, typedDefault, isRequired);
+                case "byte":
+                    return new JSBBase64String(name, description, typedDefault, isRequired);
+                default:
+                    return null;
+            }
         }
 
         private static IJSBPart ParseIntegerPart(IdentifierString name, string description, JsonObject o, bool isRequired)

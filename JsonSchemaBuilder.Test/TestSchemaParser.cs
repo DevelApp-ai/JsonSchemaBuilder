@@ -311,6 +311,115 @@ namespace JsonSchemaBuilder.Test
         }
 
         [Fact]
+        public void TypedFormatsWithCanonicalDefaultsKeepTheTypedPart()
+        {
+            JsonNode document = JsonNode.Parse(@"
+{
+  ""type"": ""object"",
+  ""properties"": {
+    ""birthDate"": { ""type"": ""string"", ""format"": ""date"", ""default"": ""2015-05-16"" },
+    ""alarmTime"": { ""type"": ""string"", ""format"": ""time"", ""default"": ""07:15:30.1230000+00:00"" },
+    ""updated"": { ""type"": ""string"", ""format"": ""date-time"", ""default"": ""2026-01-01T07:15:30.1230000+00:00"" },
+    ""contact"": { ""type"": ""string"", ""format"": ""email"", ""default"": ""user@example.com"" },
+    ""id"": { ""type"": ""string"", ""format"": ""uuid"", ""default"": ""123e4567-e89b-12d3-a456-426614174000"" },
+    ""signature"": { ""type"": ""string"", ""format"": ""byte"", ""default"": ""aGVsbG8="" },
+    ""homepage"": { ""type"": ""string"", ""format"": ""uri"", ""default"": ""https://example.com"" }
+  }
+}");
+
+            JSBSchema parsed = JSBSchemaParser.ParseDocument(document);
+            JSBObject topObject = (JSBObject)parsed.TopPart;
+            //A default the typed part can carry without changing the emitted
+            //wire is mapped into the typed part
+            JSBDate birthDate = Assert.IsType<JSBDate>(topObject.Properties["BirthDate"]);
+            Assert.Equal("2015-05-16", birthDate.DefaultValue);
+            JSBTime alarmTime = Assert.IsType<JSBTime>(topObject.Properties["AlarmTime"]);
+            Assert.Equal("07:15:30.1230000+00:00", alarmTime.DefaultValue);
+            JSBDateTime updated = Assert.IsType<JSBDateTime>(topObject.Properties["Updated"]);
+            Assert.Equal("2026-01-01T07:15:30.1230000+00:00", updated.DefaultValue);
+            JSBEmail contact = Assert.IsType<JSBEmail>(topObject.Properties["Contact"]);
+            Assert.Equal("user@example.com", contact.DefaultValue);
+            JSBGuid id = Assert.IsType<JSBGuid>(topObject.Properties["Id"]);
+            Assert.Equal("123e4567-e89b-12d3-a456-426614174000", id.DefaultValue);
+            JSBBase64String signature = Assert.IsType<JSBBase64String>(topObject.Properties["Signature"]);
+            Assert.Equal("aGVsbG8=", signature.DefaultValue);
+            JSBUri homepage = Assert.IsType<JSBUri>(topObject.Properties["Homepage"]);
+            Assert.Equal("https://example.com", homepage.DefaultValue);
+
+            //Builder emission expands the authored document (title,
+            //description, examples/enum), so the guarantee to assert is
+            //idempotence: parse the emission, emit again, compare emissions
+            JsonNode emitted = JsonSerializer.SerializeToNode(parsed.AsJsonSchema());
+            JSBSchema reparsed = JSBSchemaParser.ParseDocument(emitted, parsed.Name);
+            JSBObject reparsedTop = (JSBObject)reparsed.TopPart;
+            Assert.Equal(JSBPartType.Date, reparsedTop.Properties["BirthDate"].PartType);
+            Assert.Equal(JSBPartType.Time, reparsedTop.Properties["AlarmTime"].PartType);
+            Assert.Equal(JSBPartType.DateTime, reparsedTop.Properties["Updated"].PartType);
+            Assert.Equal(JSBPartType.Email, reparsedTop.Properties["Contact"].PartType);
+            Assert.Equal(JSBPartType.Guid, reparsedTop.Properties["Id"].PartType);
+            Assert.Equal(JSBPartType.Base64String, reparsedTop.Properties["Signature"].PartType);
+            Assert.Equal(JSBPartType.Uri, reparsedTop.Properties["Homepage"].PartType);
+            JsonNode reemitted = JsonSerializer.SerializeToNode(reparsed.AsJsonSchema());
+            AssertJsonNodesSemanticallyEqual(emitted, reemitted);
+        }
+
+        [Fact]
+        public void TypedTimeDefaultWithANonCanonicalOffsetDegradesToPlainString()
+        {
+            JsonNode document = JsonNode.Parse(@"
+{
+  ""type"": ""object"",
+  ""properties"": {
+    ""alarmTime"": { ""type"": ""string"", ""format"": ""time"", ""default"": ""07:15:30.1230000+05:00"" }
+  }
+}");
+
+            JSBSchema parsed = JSBSchemaParser.ParseDocument(document);
+            JSBObject topObject = (JSBObject)parsed.TopPart;
+            //A default the typed part would silently shift on re-emission is
+            //kept verbatim by a plain string part: wire fidelity beats typed
+            //part fidelity
+            JSBString alarmTime = Assert.IsType<JSBString>(topObject.Properties["AlarmTime"]);
+            Assert.Equal(JSBPartType.String, alarmTime.PartType);
+            Assert.Equal("time", alarmTime.Format);
+            Assert.Equal("07:15:30.1230000+05:00", alarmTime.DefaultValue);
+        }
+
+        [Fact]
+        public void TypedFormatWithADefaultNotMatchingTheNativePatternDegradesToPlainString()
+        {
+            JsonNode document = JsonNode.Parse(@"
+{
+  ""type"": ""object"",
+  ""properties"": {
+    ""birthDate"": { ""type"": ""string"", ""format"": ""date"", ""default"": ""not a date"" }
+  }
+}");
+
+            JSBSchema parsed = JSBSchemaParser.ParseDocument(document);
+            JSBObject topObject = (JSBObject)parsed.TopPart;
+            JSBString birthDate = Assert.IsType<JSBString>(topObject.Properties["BirthDate"]);
+            Assert.Equal(JSBPartType.String, birthDate.PartType);
+            Assert.Equal("date", birthDate.Format);
+            Assert.Equal("not a date", birthDate.DefaultValue);
+        }
+
+        [Fact]
+        public void NonStringDefaultOnAStringPartThrows()
+        {
+            JsonNode document = JsonNode.Parse(@"
+{
+  ""type"": ""object"",
+  ""properties"": {
+    ""count"": { ""type"": ""string"", ""default"": 42 }
+  }
+}");
+
+            Exception exception = Assert.ThrowsAny<Exception>(() => JSBSchemaParser.ParseDocument(document));
+            Assert.Contains("default", exception.Message);
+        }
+
+        [Fact]
         public void SanitizedPropertyKeysKeepGenerating()
         {
             JsonNode document = JsonNode.Parse(@"
@@ -426,15 +535,13 @@ namespace JsonSchemaBuilder.Test
 
             JSBObject topObject = (JSBObject)parsed.TopPart;
             JSBString parsedColor = (JSBString)topObject.Properties["Color"];
-            //Default values are carried by the part model but not emitted to the
-            //schema document by the typed parts: a round trip cannot recover
-            //what was never on the wire (parses of externally authored
-            //documents keep their default values)
-            Assert.Null(parsedColor.DefaultValue);
+            //Default values are emitted to the schema document by the parts,
+            //so a round trip recovers what was authored
+            Assert.Equal("red", parsedColor.DefaultValue);
             Assert.Equal(new List<string>() { "red", "green" }, parsedColor.Examples);
             Assert.Equal(new List<string>() { "red", "green", "blue" }, parsedColor.Enums);
             JSBInteger parsedCode = (JSBInteger)topObject.Properties["Code"];
-            Assert.Null(parsedCode.DefaultValue);
+            Assert.Equal(3L, parsedCode.DefaultValue);
             Assert.Equal(2, parsedCode.Enums.Count);
 
             JsonNode reemitted = JsonSerializer.SerializeToNode(parsed.AsJsonSchema());
