@@ -18,7 +18,7 @@
 
   <ItemGroup>
     <PackageReference Include="Ardalis.SmartEnum" Version="2.0.0" />
-    <PackageReference Include="DevelApp.Utility" Version="1.0.6" />
+    <PackageReference Include="DevelApp.Utility" Version="1.1.0" />
     <!-- JsonSchema.Net 9.6.0 + System.Text.Json 10.0.5 is the coherent stack for
          netstandard2.0 consumers on .NET 8: the 9.7.0 chain (Json.More.Net 3.1.0)
          requires System.Text.Json 11, whose internal serializer contracts break

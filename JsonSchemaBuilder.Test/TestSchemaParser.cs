@@ -2,7 +2,6 @@ using DevelApp.JsonSchemaBuilder;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Xunit;
@@ -57,25 +56,25 @@ namespace JsonSchemaBuilder.Test
 
             JSBObject topObject = (JSBObject)parsed.TopPart;
             Assert.False(topObject.IsExpandable);
-            IJSBPart namePart = GetProperty(topObject, "Name");
+            IJSBPart namePart = topObject.Properties["Name"];
             JSBString nameString = Assert.IsType<JSBString>(namePart);
             Assert.True(nameString.IsRequired);
-            IJSBPart nickNamePart = GetProperty(topObject, "NickName");
+            IJSBPart nickNamePart = topObject.Properties["NickName"];
             //The type array [string, null] is approximated as the base type
             //marked optional: the parts cannot express required but nullable
             Assert.IsType<JSBString>(nickNamePart);
             Assert.False(nickNamePart.IsRequired);
             //The typed email format is mapped to the JSBEmail part when
             //unconstrained
-            IJSBPart emailPart = GetProperty(topObject, "Email");
+            IJSBPart emailPart = topObject.Properties["Email"];
             Assert.Equal(JSBPartType.Email, emailPart.PartType);
             //Documents authored with a default keep it on the parsed part
-            IJSBPart activePart = GetProperty(topObject, "Active");
+            IJSBPart activePart = topObject.Properties["Active"];
             Assert.True(((JSBBoolean)activePart).DefaultValue);
             //The definitions keep the original wire keys they were authored with
             Assert.Contains("address", parsed.Definitions.Keys);
             JSBObject addressDefinition = Assert.IsType<JSBObject>(parsed.Definitions["address"]);
-            Assert.True(GetProperty(addressDefinition, "Street").IsRequired);
+            Assert.True(addressDefinition.Properties["Street"].IsRequired);
         }
 
         [Fact]
@@ -178,7 +177,7 @@ namespace JsonSchemaBuilder.Test
 
             JSBSchema parsed = JSBSchemaParser.ParseDocument(document);
             JSBObject topObject = (JSBObject)parsed.TopPart;
-            IJSBPart mixedPart = GetProperty(topObject, "Mixed");
+            IJSBPart mixedPart = topObject.Properties["Mixed"];
             JSBOneOf oneOf = Assert.IsType<JSBOneOf>(mixedPart);
             Assert.Equal(2, oneOf.Schemas.Count);
         }
@@ -199,7 +198,7 @@ namespace JsonSchemaBuilder.Test
 
             JSBSchema parsed = JSBSchemaParser.ParseDocument(document);
             JSBObject topObject = (JSBObject)parsed.TopPart;
-            IJSBPart homePart = GetProperty(topObject, "Home");
+            IJSBPart homePart = topObject.Properties["Home"];
             JSBRef refPart = Assert.IsType<JSBRef>(homePart);
             //The fragment keeps the leading path separator of the fragment part
             //of the uri exactly as JSBRef stores it for relative references
@@ -303,10 +302,10 @@ namespace JsonSchemaBuilder.Test
             JSBObject topObject = (JSBObject)parsed.TopPart;
             //A format with constraints the typed part cannot carry stays a plain
             //string part that carries the format through
-            JSBString homepage = Assert.IsType<JSBString>(GetProperty(topObject, "Homepage"));
+            JSBString homepage = Assert.IsType<JSBString>(topObject.Properties["Homepage"]);
             Assert.Equal("uri", homepage.Format);
             Assert.Null(homepage.Pattern);
-            JSBString friendEmail = Assert.IsType<JSBString>(GetProperty(topObject, "FriendEmail"));
+            JSBString friendEmail = Assert.IsType<JSBString>(topObject.Properties["FriendEmail"]);
             Assert.Equal("email", friendEmail.Format);
             Assert.Equal("^a.*", friendEmail.Pattern);
         }
@@ -328,7 +327,7 @@ namespace JsonSchemaBuilder.Test
             //Sanitized to an identifier-like part name with a leading
             //capital (Firstname, not FirstName); documented that exotic
             //wire keys diverge on re-emission
-            Assert.Equal("Firstname", GetProperty(topObject, "Firstname").Name.ToString());
+            Assert.Equal("Firstname", topObject.Properties["Firstname"].Name.ToString());
         }
 
         #endregion
@@ -398,12 +397,12 @@ namespace JsonSchemaBuilder.Test
             //The native hardcoded patterns of the typed parts make them parse back
             //to the same part types
             JSBObject topObject = (JSBObject)parsed.TopPart;
-            Assert.Equal(JSBPartType.Date, GetProperty(topObject, "DateOfBirth").PartType);
-            Assert.Equal(JSBPartType.Time, GetProperty(topObject, "WakeupTime").PartType);
-            Assert.Equal(JSBPartType.DateTime, GetProperty(topObject, "Updated").PartType);
-            Assert.Equal(JSBPartType.Guid, GetProperty(topObject, "Identifier").PartType);
-            Assert.Equal(JSBPartType.Uri, GetProperty(topObject, "Website").PartType);
-            Assert.Equal(JSBPartType.Base64String, GetProperty(topObject, "Signature").PartType);
+            Assert.Equal(JSBPartType.Date, topObject.Properties["DateOfBirth"].PartType);
+            Assert.Equal(JSBPartType.Time, topObject.Properties["WakeupTime"].PartType);
+            Assert.Equal(JSBPartType.DateTime, topObject.Properties["Updated"].PartType);
+            Assert.Equal(JSBPartType.Guid, topObject.Properties["Identifier"].PartType);
+            Assert.Equal(JSBPartType.Uri, topObject.Properties["Website"].PartType);
+            Assert.Equal(JSBPartType.Base64String, topObject.Properties["Signature"].PartType);
 
             JsonNode reemitted = JsonSerializer.SerializeToNode(parsed.AsJsonSchema());
             AssertJsonNodesSemanticallyEqual(emitted, reemitted);
@@ -426,7 +425,7 @@ namespace JsonSchemaBuilder.Test
             JSBSchema parsed = JSBSchemaParser.ParseDocument(emitted, original.Name);
 
             JSBObject topObject = (JSBObject)parsed.TopPart;
-            JSBString parsedColor = (JSBString)GetProperty(topObject, "Color");
+            JSBString parsedColor = (JSBString)topObject.Properties["Color"];
             //Default values are carried by the part model but not emitted to the
             //schema document by the typed parts: a round trip cannot recover
             //what was never on the wire (parses of externally authored
@@ -434,7 +433,7 @@ namespace JsonSchemaBuilder.Test
             Assert.Null(parsedColor.DefaultValue);
             Assert.Equal(new List<string>() { "red", "green" }, parsedColor.Examples);
             Assert.Equal(new List<string>() { "red", "green", "blue" }, parsedColor.Enums);
-            JSBInteger parsedCode = (JSBInteger)GetProperty(topObject, "Code");
+            JSBInteger parsedCode = (JSBInteger)topObject.Properties["Code"];
             Assert.Null(parsedCode.DefaultValue);
             Assert.Equal(2, parsedCode.Enums.Count);
 
@@ -455,7 +454,7 @@ namespace JsonSchemaBuilder.Test
             JSBSchema parsed = JSBSchemaParser.ParseDocument(emitted, original.Name);
 
             JSBObject topObject = (JSBObject)parsed.TopPart;
-            JSBArray addresses = (JSBArray)GetProperty(topObject, "Addresses");
+            JSBArray addresses = (JSBArray)topObject.Properties["Addresses"];
             JSBRef parsedRef = Assert.IsType<JSBRef>(addresses.Items[0]);
             Assert.Equal("./address.schema.json", parsedRef.IriReference.OriginalString);
             //Requiredness of array items does not exist on the wire so the
@@ -466,22 +465,24 @@ namespace JsonSchemaBuilder.Test
             AssertJsonNodesSemanticallyEqual(emitted, reemitted);
         }
 
-        /// <summary>
-        /// Looks a property up by its part name. IdentifierString does not
-        /// implement a GetHashCode consistent with its Equals so dictionary
-        /// lookups with a fresh instance do not find existing keys: match by text
-        /// </summary>
-        private static IJSBPart GetProperty(JSBObject jsbObject, string name)
+        [Fact]
+        public void IdentifierStringValueSemanticsSupportDictionaryLookups()
         {
-            foreach (KeyValuePair<DevelApp.Utility.Model.IdentifierString, IJSBPart> pair in jsbObject.Properties)
-            {
-                if (pair.Key.ToString().Equals(name))
-                {
-                    return pair.Value;
-                }
-            }
-            throw new Xunit.Sdk.XunitException(
-                $"No property '{name}' on '{jsbObject.Name}'. Properties: {string.Join(", ", jsbObject.Properties.Keys.Select(key => key.ToString()))}");
+            //The pinned DevelApp.Utility must implement value equality so part
+            //dictionaries can be looked up with fresh instances: version 1.0.6
+            //(the last pre-fix package) broke this, version 1.0.7 added the
+            //missing GetHashCode. All Properties[...] tests in this suite look
+            //up by fresh instance so a bad regression pin fails loud here
+            DevelApp.Utility.Model.IdentifierString first = new DevelApp.Utility.Model.IdentifierString("Name");
+            DevelApp.Utility.Model.IdentifierString second = new DevelApp.Utility.Model.IdentifierString("Name");
+            Assert.True(first.Equals(second));
+            Assert.True(first == second);
+            Assert.Equal(first.GetHashCode(), second.GetHashCode());
+
+            Dictionary<DevelApp.Utility.Model.IdentifierString, string> lookup =
+                new Dictionary<DevelApp.Utility.Model.IdentifierString, string>();
+            lookup[first] = "value";
+            Assert.Equal("value", lookup[second]);
         }
 
         private static void AssertParsedPartsMatch(JSBSchema original, JSBSchema parsed)
