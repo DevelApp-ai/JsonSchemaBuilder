@@ -266,15 +266,16 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         {
             if (RegisteredJsonSchemas.TryGetValue(relativeFileNameWithExpandedDot, out IJsonSchemaDefinition jsonSchemaDefinition))
             {
-                if (jSBRef.Fragment.ToLowerInvariant().StartsWith("/definitions/"))
+                string fragmentLower = jSBRef.Fragment.ToLowerInvariant();
+                if (fragmentLower.StartsWith("/definitions/") || fragmentLower.StartsWith("/$defs/"))
                 {
                     IJSBPart referencedPart = LookupReferencedPartFromDefinitions(jsonSchemaDefinition.JsonSchemaBuilderSchema, jSBRef.Fragment);
                     if (referencedPart != null)
                     {
                         return (referencedPart, null);
                     }
-                    //fall through: a /definitions/ fragment the part tree cannot resolve
-                    //resolves against the emitted schema json below
+                    //fall through: a /definitions/ or /$defs/ fragment the part tree
+                    //cannot resolve resolves against the emitted schema json below
                 }
                 else if (string.IsNullOrWhiteSpace(jSBRef.Fragment) ||
                     jSBRef.Fragment.Equals("/"))
@@ -354,7 +355,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     {
                         throw new CodeGenerationException($"Json reference fragment '{fragment}' does not resolve: '{segment}' was not found");
                     }
-                    insideDefinitions = segment == "definitions";
+                    insideDefinitions = segment == "definitions" || segment == "$defs";
                     current = next;
                 }
                 else if (current is JsonArray currentArray)
@@ -375,7 +376,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         }
 
         /// <summary>
-        /// Resolves a /definitions/ fragment against a registered schema, including nested
+        /// Resolves a /definitions/ or /$defs/ fragment against a registered schema, including nested
         /// definition paths like #/definitions/outer/definitions/inner now that parts can
         /// carry definitions on other levels than the top schema. The first segment can
         /// resolve against the schema definitions or against the definitions of the top
@@ -387,7 +388,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <returns></returns>
         public IJSBPart LookupReferencedPartFromDefinitions(JSBSchema schema, string fragment)
         {
-            string[] segments = fragment.Split(new[] { "/definitions/" }, StringSplitOptions.RemoveEmptyEntries);
+            string[] segments = fragment.Split(new[] { "/definitions/", "/$defs/" }, StringSplitOptions.RemoveEmptyEntries);
             IJSBPart currentPart = schema;
             foreach (string segment in segments)
             {

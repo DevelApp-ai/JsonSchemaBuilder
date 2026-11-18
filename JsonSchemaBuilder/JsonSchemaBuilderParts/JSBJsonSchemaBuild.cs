@@ -51,10 +51,22 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         /// <returns></returns>
         public static JsonSchema Build(JsonSchemaBuilder builder)
         {
+            return Build(builder, JSBSchemaVersion.Draft7);
+        }
+
+        /// <summary>
+        /// Builds a JsonSchemaBuilder into a JsonSchema with the semantics of
+        /// the given schema version and a fresh schema registry
+        /// </summary>
+        /// <param name="builder"></param>
+        /// <param name="schemaVersion"></param>
+        /// <returns></returns>
+        public static JsonSchema Build(JsonSchemaBuilder builder, JSBSchemaVersion schemaVersion)
+        {
             return builder.Build(new BuildOptions
             {
                 SchemaRegistry = new SchemaRegistry(),
-                Dialect = Dialect.Draft07
+                Dialect = schemaVersion.ToDialect()
             }, BaseUri);
         }
 
@@ -65,10 +77,21 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         /// <returns></returns>
         public static BuildOptions CreateBuildOptions()
         {
+            return CreateBuildOptions(JSBSchemaVersion.Draft7);
+        }
+
+        /// <summary>
+        /// Build options with the semantics of the given schema version and a
+        /// fresh schema registry, for parsing schema json back into a JsonSchema
+        /// </summary>
+        /// <param name="schemaVersion"></param>
+        /// <returns></returns>
+        public static BuildOptions CreateBuildOptions(JSBSchemaVersion schemaVersion)
+        {
             return new BuildOptions
             {
                 SchemaRegistry = new SchemaRegistry(),
-                Dialect = Dialect.Draft07
+                Dialect = schemaVersion.ToDialect()
             };
         }
     }

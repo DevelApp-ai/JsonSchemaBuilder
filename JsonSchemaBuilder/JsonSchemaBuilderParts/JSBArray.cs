@@ -42,17 +42,24 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchemaBuilder AsJsonSchemaBuilder()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder(JSBSchemaVersion schemaVersion)
         {
-            JsonSchemaBuilder builder = InitialJsonSchema()
+            JsonSchemaBuilder builder = InitialJsonSchema(schemaVersion)
                 .Type(SchemaValueType.Array);
             if (Items.Count == 1)
             {
-                builder = builder.Items(Items[0].AsJsonSchemaBuilder());
+                builder = builder.Items(Items[0].AsJsonSchemaBuilder(schemaVersion));
+            }
+            else if (schemaVersion == JSBSchemaVersion.Draft202012)
+            {
+                //The tuple form of items was removed in 2020-12 in favor of prefixItems.
+                //No trailing items keyword is emitted since the old tuple form did not
+                //emit additionalItems either
+                builder = builder.PrefixItems(Items.Select(item => item.AsJsonSchemaBuilder(schemaVersion)));
             }
             else
             {
-                builder = builder.Items(Items.Select(item => item.AsJsonSchemaBuilder()));
+                builder = builder.Items(Items.Select(item => item.AsJsonSchemaBuilder(schemaVersion)));
             }
             if (MinItems.HasValue)
             {

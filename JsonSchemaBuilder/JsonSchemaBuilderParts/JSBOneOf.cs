@@ -59,7 +59,17 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             return JSBJsonSchemaBuild.Build(AsJsonSchemaBuilder());
         }
 
+        public JsonSchema AsJsonSchema(JSBSchemaVersion schemaVersion)
+        {
+            return JSBJsonSchemaBuild.Build(AsJsonSchemaBuilder(schemaVersion), schemaVersion);
+        }
+
         public JsonSchemaBuilder AsJsonSchemaBuilder()
+        {
+            return AsJsonSchemaBuilder(JSBSchemaVersion.Draft7);
+        }
+
+        public JsonSchemaBuilder AsJsonSchemaBuilder(JSBSchemaVersion schemaVersion)
         {
             if (Schemas.Count == 0)
             {
@@ -76,13 +86,20 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 new List<(string name, JsonSchemaBuilder definition)>();
             foreach (var pair in Definitions)
             {
-                definitionsOut.Add((pair.Key, pair.Value.AsJsonSchemaBuilder()));
+                definitionsOut.Add((pair.Key, pair.Value.AsJsonSchemaBuilder(schemaVersion)));
             }
             if (definitionsOut.Count > 0)
             {
-                builder.Definitions(definitionsOut.ToArray());
+                if (schemaVersion.UsesDefsContainer())
+                {
+                    builder.Defs(definitionsOut.ToArray());
+                }
+                else
+                {
+                    builder.Definitions(definitionsOut.ToArray());
+                }
             }
-            builder.OneOf(Schemas.Select(schema => schema.AsJsonSchemaBuilder()));
+            builder.OneOf(Schemas.Select(schema => schema.AsJsonSchemaBuilder(schemaVersion)));
             return builder;
         }
     }

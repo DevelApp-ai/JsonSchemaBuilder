@@ -52,9 +52,9 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchemaBuilder AsJsonSchemaBuilder()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder(JSBSchemaVersion schemaVersion)
         {
-            JsonSchemaBuilder builder = InitialJsonSchema()
+            JsonSchemaBuilder builder = InitialJsonSchema(schemaVersion)
                 .Type(SchemaValueType.Object)
                 .AdditionalProperties(IsExpandable);
             //Add properties
@@ -62,7 +62,7 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 new List<(string name, JsonSchemaBuilder property)>();
             foreach (IJSBPart property in Properties.Values)
             {
-                propertiesOut.Add((StartWithSmallLetter(property.Name), property.AsJsonSchemaBuilder()));
+                propertiesOut.Add((StartWithSmallLetter(property.Name), property.AsJsonSchemaBuilder(schemaVersion)));
             }
             if (propertiesOut.Count > 0)
             {

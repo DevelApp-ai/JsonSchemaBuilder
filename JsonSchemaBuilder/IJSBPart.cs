@@ -24,17 +24,36 @@ namespace DevelApp.JsonSchemaBuilder
         bool IsRequired { get; }
 
         /// <summary>
-        /// Returns JsonSchemaPart as a Json.Schema JsonSchema
+        /// Returns JsonSchemaPart as a Json.Schema JsonSchema built as draft-07
         /// </summary>
         /// <returns></returns>
         JsonSchema AsJsonSchema();
 
         /// <summary>
-        /// Returns JsonSchemaPart as a JsonSchemaBuilder so it can be
-        /// composed into a larger schema before conversion
+        /// Returns JsonSchemaPart as a Json.Schema JsonSchema built with the
+        /// given schema version so parts can be embedded in a schema of a
+        /// later dialect
+        /// </summary>
+        /// <param name="schemaVersion"></param>
+        /// <returns></returns>
+        JsonSchema AsJsonSchema(JSBSchemaVersion schemaVersion);
+
+        /// <summary>
+        /// Returns JsonSchemaPart as a JsonSchemaBuilder built as draft-07 so
+        /// it can be composed into a larger schema before conversion
         /// </summary>
         /// <returns></returns>
         JsonSchemaBuilder AsJsonSchemaBuilder();
+
+        /// <summary>
+        /// Returns JsonSchemaPart as a JsonSchemaBuilder built with the given
+        /// schema version (container keyword and array items form follow the
+        /// dialect) so it can be composed into a larger schema before
+        /// conversion
+        /// </summary>
+        /// <param name="schemaVersion"></param>
+        /// <returns></returns>
+        JsonSchemaBuilder AsJsonSchemaBuilder(JSBSchemaVersion schemaVersion);
 
         /// <summary>
         /// Returns the PartType of the JsonSchemaPart
