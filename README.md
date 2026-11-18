@@ -100,8 +100,11 @@ Rounding behavior to know about:
 * a type array of `[type, null]` is approximated as the base type marked optional (the parts
   cannot express required but nullable)
 * typed formats (`date`, `time`, `date-time`, `email`, `uuid`, `uri`, `byte`) map to their
-  typed parts only when unconstrained; otherwise the value stays a plain `JSBString` that
-  carries the format
+  typed parts only when unconstrained. A carried default is mapped into the typed part only
+  when the part can re-emit it unchanged: string defaults must match the native pattern and
+  `date`/`time`/`date-time` defaults must be the exact canonical emission (UTC offset),
+  otherwise the value stays a plain `JSBString` that carries format, pattern and default
+  wire-faithfully
 * anonymous positions (array items, tuple positions, composition variants) take their part
   name from the subschema `title` when present (builder emitted schemas round trip their part
   names this way); without a title a stable positional name is generated
@@ -130,4 +133,3 @@ in the message.
 
 ## TODO
 * Builder parts for the later dialect advanced keywords ($anchor/$dynamicRef/$recursiveRef, dependentSchemas/dependentRequired, unevaluatedProperties/unevaluatedItems)
-* Emitted default values: the typed parts carry a default in the part model but do not emit it to the schema document

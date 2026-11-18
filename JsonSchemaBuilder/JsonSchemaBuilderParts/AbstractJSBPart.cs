@@ -137,6 +137,12 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 }
                 builder.Enum(enumsOut);
             }
+            //Emit the carried default value so round trips and consumers of
+            //the emitted document see what the part was authored with
+            if (DefaultValue != null)
+            {
+                builder = builder.Default(TAsJsonValue(DefaultValue));
+            }
             //Add definitions carried by this part so definitions are supported
             //on other levels than the top schema
             List<(string name, JsonSchemaBuilder definition)> definitionsOut =
