@@ -1,14 +1,14 @@
 ﻿using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
-using Manatee.Json;
-using Manatee.Json.Schema;
-using Manatee.Json.Serialization;
+using Json.Schema;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 
 namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 {
@@ -262,7 +262,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <param name="relativeFileNameWithExpandedDot"></param>
         /// <param name="jSBRef"></param>
         /// <returns></returns>
-        public (IJSBPart refPart, JsonValue schemaValue) LookupReferencedPart(string relativeFileNameWithExpandedDot, JSBRef jSBRef)
+        public (IJSBPart refPart, JsonNode schemaValue) LookupReferencedPart(string relativeFileNameWithExpandedDot, JSBRef jSBRef)
         {
             if (RegisteredJsonSchemas.TryGetValue(relativeFileNameWithExpandedDot, out IJsonSchemaDefinition jsonSchemaDefinition))
             {
@@ -281,7 +281,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 {
                     return (jsonSchemaDefinition.JsonSchemaBuilderSchema, null);
                 }
-                return (null, ResolveJsonPointer(ToJsonValue(jsonSchemaDefinition.JsonSchemaBuilderSchema), jSBRef.Fragment));
+                return (null, ResolveJsonPointer(ToJsonNode(jsonSchemaDefinition.JsonSchemaBuilderSchema), jSBRef.Fragment));
             }
 
             //Search for the schema file as .schema.json and .json and load it when found
@@ -298,7 +298,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             }
 
             // make a schema and generate code from that
-            JsonValue jsonValueOfSchema = JsonValue.Parse(schemaString);
+            JsonNode jsonValueOfSchema = JsonNode.Parse(schemaString);
             return (null, ResolveJsonPointer(jsonValueOfSchema, jSBRef.Fragment));
         }
 
@@ -308,14 +308,14 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// </summary>
         /// <param name="schema"></param>
         /// <returns></returns>
-        public JsonValue ToJsonValue(JSBSchema schema)
+        public JsonNode ToJsonNode(JSBSchema schema)
         {
-            return new JsonSerializer().Serialize(schema.AsJsonSchema());
+            return JsonSerializer.SerializeToNode(schema.AsJsonSchema(), JSBJsonSchemaBuild.SerializerOptions);
         }
 
         /// <summary>
         /// Evaluates a reference fragment as an RFC 6901 JSON Pointer (without the
-        /// leading '#') against a schema given as JsonValue. An empty fragment or
+        /// leading '#') against a schema given as JsonNode. An empty fragment or
         /// '/' returns the entire schema. Keys inside a definitions container keep
         /// the historical lenient matching (exact, then TitleCase, then camelCase)
         /// since builder parts name definitions in TitleCase while authored
@@ -324,7 +324,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <param name="schemaValue"></param>
         /// <param name="fragment"></param>
         /// <returns></returns>
-        public JsonValue ResolveJsonPointer(JsonValue schemaValue, string fragment)
+        public JsonNode ResolveJsonPointer(JsonNode schemaValue, string fragment)
         {
             if (string.IsNullOrWhiteSpace(fragment) || fragment == "/")
             {
@@ -332,22 +332,22 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             }
             string trimmedFragment = fragment.StartsWith("/") ? fragment.Substring(1) : fragment;
             string[] rawSegments = trimmedFragment.Split('/');
-            JsonValue current = schemaValue;
+            JsonNode current = schemaValue;
             //True while the segment being looked up is a key inside a definitions container
             bool insideDefinitions = false;
             foreach (string rawSegment in rawSegments)
             {
                 string segment = rawSegment.Replace("~1", "/").Replace("~0", "~");
-                if (current.Type == JsonValueType.Object)
+                if (current is JsonObject currentObject)
                 {
-                    JsonValue next = null;
-                    if (!current.Object.TryGetValue(segment, out next) && insideDefinitions)
+                    JsonNode next = null;
+                    if (!currentObject.TryGetPropertyValue(segment, out next) && insideDefinitions)
                     {
                         string titleKey = TransformToTitleCase(segment);
                         string camelKey = TransformToCamelCase(segment);
-                        if (!current.Object.TryGetValue(titleKey, out next))
+                        if (!currentObject.TryGetPropertyValue(titleKey, out next))
                         {
-                            current.Object.TryGetValue(camelKey, out next);
+                            currentObject.TryGetPropertyValue(camelKey, out next);
                         }
                     }
                     if (next == null)
@@ -357,14 +357,14 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     insideDefinitions = segment == "definitions";
                     current = next;
                 }
-                else if (current.Type == JsonValueType.Array)
+                else if (current is JsonArray currentArray)
                 {
-                    if (!int.TryParse(segment, out int index) || index < 0 || index >= current.Array.Count)
+                    if (!int.TryParse(segment, out int index) || index < 0 || index >= currentArray.Count)
                     {
                         throw new CodeGenerationException($"Json reference fragment '{fragment}' does not resolve: '{segment}' is not a valid array index");
                     }
                     insideDefinitions = false;
-                    current = current.Array[index];
+                    current = currentArray[index];
                 }
                 else
                 {

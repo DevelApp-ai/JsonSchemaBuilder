@@ -1,8 +1,8 @@
 ﻿using System;
-using Manatee.Json;
-using Manatee.Json.Schema;
-using Manatee.Json.Serialization;
+using Json.Schema;
 using System.IO;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.JsonSchemaBuilder.CodeGeneration;
 using DevelApp.Utility.Model;
@@ -22,7 +22,7 @@ namespace DevelApp.JsonSchemaBuilder
         /// </summary>
         /// <param name="jsonSchema"></param>
         /// <param name="jsonValue"></param>
-        public AbstractJsonSchema(JsonSchema jsonSchema = null, JsonValue jsonValue = null)
+        public AbstractJsonSchema(JsonSchema jsonSchema = null, JsonNode jsonValue = null)
         {
             if (jsonSchema != null)
             {
@@ -41,7 +41,7 @@ namespace DevelApp.JsonSchemaBuilder
         protected JsonSchema _jsonSchema;
 
         /// <summary>
-        /// Returns the complete Manatee JsonSchema
+        /// Returns the complete JsonSchema built with Json.Schema (json-everything)
         /// </summary>
         public JsonSchema JsonSchema { 
             get
@@ -76,10 +76,9 @@ namespace DevelApp.JsonSchemaBuilder
         /// <param name="applicationRoot"></param>
         public void WriteSchemaToFile(string applicationRoot)
         {
-            var serializer = new JsonSerializer();
             if (JsonSchema != null)
             {
-                var schemaInJson = JsonSchema.ToJson(serializer);
+                var schemaInJson = JsonSerializer.SerializeToNode(JsonSchema, JSBJsonSchemaBuild.SerializerOptions);
                 string localFile = Path.Combine(applicationRoot, FileName);
                 FileInfo fileInfo = new FileInfo(localFile);
                 string directory = fileInfo.Directory.FullName;
@@ -88,7 +87,7 @@ namespace DevelApp.JsonSchemaBuilder
                     Directory.CreateDirectory(directory);
                 }
 
-                File.WriteAllText(localFile, schemaInJson.GetIndentedString());
+                File.WriteAllText(localFile, schemaInJson.ToJsonString(JSBJsonSchemaBuild.IndentedSerializerOptions));
             }
             else
             {
@@ -159,10 +158,9 @@ namespace DevelApp.JsonSchemaBuilder
         /// Main function. Used to build JsonSchema from JsonSchemaParts
         /// </summary>
         /// <returns></returns>
-        protected virtual JSBSchema BuildJsonSchema(JsonValue jsonValue)
+        protected virtual JSBSchema BuildJsonSchema(JsonNode jsonValue)
         {
-            JsonSerializer jsonSerializer = new JsonSerializer();
-            JsonSchema deserializedSchema = jsonSerializer.Deserialize<JsonSchema>(jsonValue);
+            JsonSchema deserializedSchema = JsonSchema.FromText(jsonValue.ToJsonString(), JSBJsonSchemaBuild.CreateBuildOptions(), JSBJsonSchemaBuild.BaseUri);
             return BuildJsonSchema(deserializedSchema);
         }
 

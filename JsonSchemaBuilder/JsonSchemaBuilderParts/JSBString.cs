@@ -1,11 +1,12 @@
 ﻿using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.Utility.Model;
-using Manatee.Json.Schema;
+using Json.Schema;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
     /// <summary>
     /// Ordinary string and parent to all string format types ref http://json-schema.org/understanding-json-schema/reference/string.html
     /// </summary>
@@ -46,32 +47,32 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder()
         {
-            JsonSchema returnSchema = InitialJsonSchema()
-                .Type(JsonSchemaType.String);
+            JsonSchemaBuilder builder = InitialJsonSchema()
+                .Type(SchemaValueType.String);
 
             if (MinLength > 0)
             {
-                returnSchema.MinLength(MinLength);
+                builder = builder.MinLength(MinLength);
             }
 
             if (MaxLength.HasValue)
             {
-                returnSchema.MaxLength(MaxLength.Value);
+                builder = builder.MaxLength(MaxLength.Value);
             }
 
             if (!string.IsNullOrWhiteSpace(Pattern))
             {
-                returnSchema.Pattern(Pattern);
+                builder = builder.Pattern(Pattern);
             }
 
             if(!string.IsNullOrWhiteSpace(Format))
             {
-                returnSchema.Format(Format);
+                builder = builder.Format(Format);
             }
 
-            return returnSchema;
+            return builder;
         }
     }
 }

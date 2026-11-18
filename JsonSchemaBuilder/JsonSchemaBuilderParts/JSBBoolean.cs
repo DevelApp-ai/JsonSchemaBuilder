@@ -1,9 +1,10 @@
 ﻿using DevelApp.Utility.Model;
-using Manatee.Json.Schema;
+using Json.Schema;
 using System.Collections.Generic;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
     public class JSBBoolean : AbstractJSBPart<bool?>
     {
         public JSBBoolean(IdentifierString boolName, string description, 
@@ -22,12 +23,12 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder()
         {
-            JsonSchema returnSchema = InitialJsonSchema()
-                .Type(JsonSchemaType.Boolean);
+            JsonSchemaBuilder builder = InitialJsonSchema()
+                .Type(SchemaValueType.Boolean);
 
-            return returnSchema;
+            return builder;
         }
     }
 }

@@ -1,10 +1,11 @@
 ﻿using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
-using Manatee.Json.Schema;
+using Json.Schema;
 using System.Collections.Generic;
 
 namespace DevelApp.JsonSchemaBuilder
 {
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
     public interface IJSBPart
     {
         /// <summary>
@@ -23,10 +24,17 @@ namespace DevelApp.JsonSchemaBuilder
         bool IsRequired { get; }
 
         /// <summary>
-        /// Returns JsonSchemaPart as Manatee JsonSchema
+        /// Returns JsonSchemaPart as a Json.Schema JsonSchema
         /// </summary>
         /// <returns></returns>
         JsonSchema AsJsonSchema();
+
+        /// <summary>
+        /// Returns JsonSchemaPart as a JsonSchemaBuilder so it can be
+        /// composed into a larger schema before conversion
+        /// </summary>
+        /// <returns></returns>
+        JsonSchemaBuilder AsJsonSchemaBuilder();
 
         /// <summary>
         /// Returns the PartType of the JsonSchemaPart

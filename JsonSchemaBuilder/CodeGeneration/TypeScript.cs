@@ -1,7 +1,9 @@
 using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
-using Manatee.Json;
+using Json.More;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -48,7 +50,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         private HashSet<string> _enqueuedTypeNames;
         private HashSet<string> _imports;
         private Queue<IJSBPart> _typeQueue;
-        private Queue<(string typeName, JsonValue rawSchema)> _rawTypeQueue;
+        private Queue<(string typeName, JsonNode rawSchema)> _rawTypeQueue;
         private HashSet<string> _enqueuedRawTypeNames;
 
         private TypeScript(CodeGenerator codeGenerator, NamespaceString startNameSpace)
@@ -68,7 +70,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             _enqueuedTypeNames = new HashSet<string>();
             _imports = new HashSet<string>();
             _typeQueue = new Queue<IJSBPart>();
-            _rawTypeQueue = new Queue<(string typeName, JsonValue rawSchema)>();
+            _rawTypeQueue = new Queue<(string typeName, JsonNode rawSchema)>();
             _enqueuedRawTypeNames = new HashSet<string>();
 
             //Types referenced through /definitions/ are emitted as own types
@@ -113,7 +115,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             //emitting, so the loop drains the queue completely
             while (_rawTypeQueue.Count > 0)
             {
-                (string rawTypeName, JsonValue rawSchema) = _rawTypeQueue.Dequeue();
+                (string rawTypeName, JsonNode rawSchema) = _rawTypeQueue.Dequeue();
                 GenerateRawInterface(codeBuilder, rawTypeName, rawSchema);
             }
 
@@ -352,7 +354,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     }
                 case JSBPartType.IriReference:
                     JSBRef jsbRef = jsonSchemaBuilderPart as JSBRef;
-                    (IJSBPart refPart, JsonValue schemaValue) pair = LookupReferencedPart(jsbRef, out string referencedRelativeLocalFile);
+                    (IJSBPart refPart, JsonNode schemaValue) pair = LookupReferencedPart(jsbRef, out string referencedRelativeLocalFile);
                     if (pair.refPart != null)
                     {
                         return MakeCorrectItemTypeForReferencedPart(pair.refPart, referencedRelativeLocalFile);
@@ -451,17 +453,17 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <param name="jsonValueOfSchema"></param>
         /// <param name="nameHint"></param>
         /// <returns></returns>
-        private string MakeCorrectItemType(JsonValue jsonValueOfSchema, IdentifierString nameHint = null)
+        private string MakeCorrectItemType(JsonNode jsonValueOfSchema, IdentifierString nameHint = null)
         {
-            JsonObject jsonObjectOfSchema = jsonValueOfSchema.Object;
+            JsonObject jsonObjectOfSchema = jsonValueOfSchema.AsObject();
             string name = string.Empty;
-            if (jsonObjectOfSchema.TryGetValue("$id", out JsonValue jsonValueId))
+            if (jsonObjectOfSchema.TryGetPropertyValue("$id", out JsonNode jsonValueId))
             {
-                name = jsonValueId.String;
+                name = jsonValueId.GetValue<string>();
             }
-            else if (jsonObjectOfSchema.TryGetValue("title", out JsonValue jsonValueTitle))
+            else if (jsonObjectOfSchema.TryGetPropertyValue("title", out JsonNode jsonValueTitle))
             {
-                name = jsonValueTitle.String;
+                name = jsonValueTitle.GetValue<string>();
             }
             else if (nameHint != null)
             {
@@ -472,9 +474,9 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 throw new CodeGenerationException($"Referenced schema has neither title nor id and no fallback name is available");
             }
             string type = string.Empty;
-            if (jsonObjectOfSchema.TryGetValue("type", out JsonValue jsonValueType))
+            if (jsonObjectOfSchema.TryGetPropertyValue("type", out JsonNode jsonValueType))
             {
-                type = jsonValueType.String;
+                type = jsonValueType.GetValue<string>();
             }
             else
             {
@@ -492,19 +494,19 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 case "object":
                     return EnqueueRawType(TransformToTitleCase(name), jsonValueOfSchema);
                 case "array":
-                    if (jsonObjectOfSchema.TryGetValue("items", out JsonValue itemsValue))
+                    if (jsonObjectOfSchema.TryGetPropertyValue("items", out JsonNode itemsValue))
                     {
-                        //Manatee emits a single item schema as an object, the tuple
+                        //System.Text.Json emits a single item schema as an object, the tuple
                         //form is an array (only the first item schema is supported,
                         //mirroring the part based generator)
-                        JsonValue itemSchema = itemsValue;
+                        JsonNode itemSchema = itemsValue;
                         bool hasItemSchema = false;
-                        if (itemsValue.Type == JsonValueType.Array && itemsValue.Array.Count > 0)
+                        if (itemsValue.GetValueKind() == JsonValueKind.Array && itemsValue.AsArray().Count > 0)
                         {
-                            itemSchema = itemsValue.Array[0];
+                            itemSchema = itemsValue.AsArray()[0];
                             hasItemSchema = true;
                         }
-                        else if (itemsValue.Type == JsonValueType.Object)
+                        else if (itemsValue.GetValueKind() == JsonValueKind.Object)
                         {
                             hasItemSchema = true;
                         }
@@ -528,7 +530,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <param name="typeName"></param>
         /// <param name="rawSchema"></param>
         /// <returns></returns>
-        private string EnqueueRawType(string typeName, JsonValue rawSchema)
+        private string EnqueueRawType(string typeName, JsonNode rawSchema)
         {
             string moduleKey = $"{_startNameSpace}|{typeName}";
             //Emitted by another file in the same module: reference the existing interface
@@ -556,24 +558,24 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <param name="codeBuilder"></param>
         /// <param name="typeName"></param>
         /// <param name="rawSchema"></param>
-        private void GenerateRawInterface(CodeBuilder codeBuilder, string typeName, JsonValue rawSchema)
+        private void GenerateRawInterface(CodeBuilder codeBuilder, string typeName, JsonNode rawSchema)
         {
-            JsonObject rawObject = rawSchema.Object;
+            JsonObject rawObject = rawSchema.AsObject();
 
             string description = "Schema referenced without builder parts";
-            if (rawObject.TryGetValue("description", out JsonValue descriptionValue) && descriptionValue.Type == JsonValueType.String)
+            if (rawObject.TryGetPropertyValue("description", out JsonNode descriptionValue) && descriptionValue.GetValueKind() == JsonValueKind.String)
             {
-                description = descriptionValue.String;
+                description = descriptionValue.GetValue<string>();
             }
 
             HashSet<string> requiredProperties = new HashSet<string>(StringComparer.Ordinal);
-            if (rawObject.TryGetValue("required", out JsonValue requiredValue) && requiredValue.Type == JsonValueType.Array)
+            if (rawObject.TryGetPropertyValue("required", out JsonNode requiredValue) && requiredValue.GetValueKind() == JsonValueKind.Array)
             {
-                foreach (JsonValue requiredEntry in requiredValue.Array)
+                foreach (JsonNode requiredEntry in requiredValue.AsArray())
                 {
-                    if (requiredEntry.Type == JsonValueType.String)
+                    if (requiredEntry.GetValueKind() == JsonValueKind.String)
                     {
-                        requiredProperties.Add(requiredEntry.String);
+                        requiredProperties.Add(requiredEntry.GetValue<string>());
                     }
                 }
             }
@@ -585,9 +587,9 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 .L("{")
                 .IndentIncrease();
 
-            if (rawObject.TryGetValue("properties", out JsonValue propertiesValue) && propertiesValue.Type == JsonValueType.Object)
+            if (rawObject.TryGetPropertyValue("properties", out JsonNode propertiesValue) && propertiesValue.GetValueKind() == JsonValueKind.Object)
             {
-                foreach (KeyValuePair<string, JsonValue> propertyPair in propertiesValue.Object)
+                foreach (KeyValuePair<string, JsonNode> propertyPair in propertiesValue.AsObject())
                 {
                     string optional = requiredProperties.Contains(propertyPair.Key) ? string.Empty : "?";
                     string itemType = MakeCorrectItemType(propertyPair.Value, propertyPair.Key);
@@ -640,7 +642,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// schema file and returns the expanded relative file name of the
         /// referenced schema
         /// </summary>
-        private (IJSBPart refPart, JsonValue schemaValue) LookupReferencedPart(JSBRef jSBRef, out string relativeLocalFileWithExpandedDot)
+        private (IJSBPart refPart, JsonNode schemaValue) LookupReferencedPart(JSBRef jSBRef, out string relativeLocalFileWithExpandedDot)
         {
             relativeLocalFileWithExpandedDot = ExpandRelativelocalFile(jSBRef.RelativeLocalFile);
             if (string.IsNullOrWhiteSpace(relativeLocalFileWithExpandedDot))

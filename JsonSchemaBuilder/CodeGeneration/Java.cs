@@ -1,7 +1,9 @@
 using DevelApp.JsonSchemaBuilder.Exceptions;
 using DevelApp.JsonSchemaBuilder.JsonSchemaParts;
 using DevelApp.Utility.Model;
-using Manatee.Json;
+using Json.More;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
@@ -54,7 +56,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         //references across files emit the same class name as the file that declares it
         private Dictionary<string, string> _topPartNameToSchemaName = new Dictionary<string, string>();
         //Raw schema objects referenced through json pointers, queued for class emission
-        private Queue<(string typeName, JsonValue rawSchema)> _rawTypeQueue;
+        private Queue<(string typeName, JsonNode rawSchema)> _rawTypeQueue;
         private HashSet<string> _enqueuedRawTypeNames;
 
         private Java(CodeGenerator codeGenerator, NamespaceString startNameSpace, IdentifierString topLevelClassName)
@@ -85,7 +87,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         {
             CodeBuilder codeBuilder = new CodeBuilder();
             _rootSchema = schema;
-            _rawTypeQueue = new Queue<(string typeName, JsonValue rawSchema)>();
+            _rawTypeQueue = new Queue<(string typeName, JsonNode rawSchema)>();
             _enqueuedRawTypeNames = new HashSet<string>();
             GenerateStartOfSchema(codeBuilder, schema);
             if (schema.TopPart != null)
@@ -114,7 +116,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             //They are appended at file scope after the top level class
             while (_rawTypeQueue.Count > 0)
             {
-                (string rawTypeName, JsonValue rawSchema) = _rawTypeQueue.Dequeue();
+                (string rawTypeName, JsonNode rawSchema) = _rawTypeQueue.Dequeue();
                 GenerateRawClass(codeBuilder, rawTypeName, rawSchema);
             }
             GenerateEndOfSchema(codeBuilder, schema);
@@ -133,7 +135,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 .L($"package {MakePackageName(_startNameSpace.ToString())};")
                 .EmptyLine()
                 .L("import com.fasterxml.jackson.annotation.JsonProperty;")
-                .L("import com.fasterxml.jackson.annotation.JsonValue;")
+                .L("import com.fasterxml.jackson.annotation.JsonNode;")
                 .L("import java.time.LocalDate;")
                 .L("import java.time.OffsetDateTime;")
                 .L("import java.time.OffsetTime;")
@@ -418,7 +420,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                     }
                 case JSBPartType.IriReference:
                     JSBRef jsbRef = jsonSchemaBuilderPart as JSBRef;
-                    (IJSBPart refPart, JsonValue schemaValue) pair = LookupReferencedPart(jsbRef);
+                    (IJSBPart refPart, JsonNode schemaValue) pair = LookupReferencedPart(jsbRef);
                     if (pair.refPart != null)
                     {
                         return MakeCorrectItemType(pair.refPart);
@@ -436,7 +438,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             }
         }
 
-        private (IJSBPart refPart, JsonValue schemaValue) LookupReferencedPart(JSBRef jSBRef)
+        private (IJSBPart refPart, JsonNode schemaValue) LookupReferencedPart(JSBRef jSBRef)
         {
             string relativeLocalFileWithExpandedDot = ExpandRelativelocalFile(jSBRef.RelativeLocalFile);
             if (string.IsNullOrWhiteSpace(relativeLocalFileWithExpandedDot))
@@ -818,7 +820,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         {
             try
             {
-                (IJSBPart refPart, JsonValue schemaValue) pair = LookupReferencedPart(jsonSchemaBuilderIriReference);
+                (IJSBPart refPart, JsonNode schemaValue) pair = LookupReferencedPart(jsonSchemaBuilderIriReference);
                 if (pair.refPart != null)
                 {
                     GenerateCodeFromInternalPart(codeBuilder, pair.refPart, key, jsonSchemaBuilderIriReference);
@@ -847,9 +849,9 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
             GenerateProperty(codeBuilder, key, jsonSchemaBuilderUriReference, MakeCorrectItemType(referencedPart), GenerateDefaultIfExisting(key, jsonSchemaBuilderUriReference));
         }
 
-        private void GenerateCodeFromSchema(CodeBuilder codeBuilder, JsonValue jsonValueOfSchema, IdentifierString key, JSBRef jsonSchemaBuilderUriReference)
+        private void GenerateCodeFromSchema(CodeBuilder codeBuilder, JsonNode jsonValueOfSchema, IdentifierString key, JSBRef jsonSchemaBuilderUriReference)
         {
-            if (jsonValueOfSchema.Type == JsonValueType.Object)
+            if (jsonValueOfSchema.GetValueKind() == JsonValueKind.Object)
             {
                 GenerateProperty(codeBuilder, key, jsonSchemaBuilderUriReference, MakeCorrectItemType(jsonValueOfSchema, key), GenerateDefaultIfExisting(key, jsonSchemaBuilderUriReference));
             }
@@ -867,17 +869,17 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <param name="jsonValueOfSchema"></param>
         /// <param name="nameHint"></param>
         /// <returns></returns>
-        private string MakeCorrectItemType(JsonValue jsonValueOfSchema, IdentifierString nameHint = null)
+        private string MakeCorrectItemType(JsonNode jsonValueOfSchema, IdentifierString nameHint = null)
         {
-            JsonObject jsonObjectOfSchema = jsonValueOfSchema.Object;
+            JsonObject jsonObjectOfSchema = jsonValueOfSchema.AsObject();
             string name = string.Empty;
-            if (jsonObjectOfSchema.TryGetValue("$id", out JsonValue jsonValueId))
+            if (jsonObjectOfSchema.TryGetPropertyValue("$id", out JsonNode jsonValueId))
             {
-                name = jsonValueId.String;
+                name = jsonValueId.GetValue<string>();
             }
-            else if (jsonObjectOfSchema.TryGetValue("title", out JsonValue jsonValueTitle))
+            else if (jsonObjectOfSchema.TryGetPropertyValue("title", out JsonNode jsonValueTitle))
             {
-                name = jsonValueTitle.String;
+                name = jsonValueTitle.GetValue<string>();
             }
             else if (nameHint != null)
             {
@@ -888,18 +890,18 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 throw new CodeGenerationException($"Referenced schema has neither title nor id and no fallback name is available");
             }
             string type = string.Empty;
-            if (jsonObjectOfSchema.TryGetValue("type", out JsonValue jsonValueType))
+            if (jsonObjectOfSchema.TryGetPropertyValue("type", out JsonNode jsonValueType))
             {
-                type = jsonValueType.String;
+                type = jsonValueType.GetValue<string>();
             }
             else
             {
                 throw new CodeGenerationException($"Referenced schema {name} has no type");
             }
             string format = string.Empty;
-            if (jsonObjectOfSchema.TryGetValue("format", out JsonValue jsonValueFormat))
+            if (jsonObjectOfSchema.TryGetPropertyValue("format", out JsonNode jsonValueFormat))
             {
-                format = jsonValueFormat.String;
+                format = jsonValueFormat.GetValue<string>();
             }
             switch (type)
             {
@@ -935,19 +937,19 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 case "integer":
                     return "Long";
                 case "array":
-                    if (jsonObjectOfSchema.TryGetValue("items", out JsonValue itemsValue))
+                    if (jsonObjectOfSchema.TryGetPropertyValue("items", out JsonNode itemsValue))
                     {
-                        //Manatee emits a single item schema as an object, the tuple
+                        //System.Text.Json emits a single item schema as an object, the tuple
                         //form is an array (only the first item schema is supported,
                         //mirroring the part based generator)
-                        JsonValue itemSchema = itemsValue;
+                        JsonNode itemSchema = itemsValue;
                         bool hasItemSchema = false;
-                        if (itemsValue.Type == JsonValueType.Array && itemsValue.Array.Count > 0)
+                        if (itemsValue.GetValueKind() == JsonValueKind.Array && itemsValue.AsArray().Count > 0)
                         {
-                            itemSchema = itemsValue.Array[0];
+                            itemSchema = itemsValue.AsArray()[0];
                             hasItemSchema = true;
                         }
-                        else if (itemsValue.Type == JsonValueType.Object)
+                        else if (itemsValue.GetValueKind() == JsonValueKind.Object)
                         {
                             hasItemSchema = true;
                         }
@@ -969,7 +971,7 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <param name="typeName"></param>
         /// <param name="rawSchema"></param>
         /// <returns></returns>
-        private string EnqueueRawType(string typeName, JsonValue rawSchema)
+        private string EnqueueRawType(string typeName, JsonNode rawSchema)
         {
             string moduleKey = $"{_startNameSpace}|{typeName}";
             //Emitted by another file in the same module: reference the existing class
@@ -993,14 +995,14 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         /// <param name="codeBuilder"></param>
         /// <param name="typeName"></param>
         /// <param name="rawSchema"></param>
-        private void GenerateRawClass(CodeBuilder codeBuilder, string typeName, JsonValue rawSchema)
+        private void GenerateRawClass(CodeBuilder codeBuilder, string typeName, JsonNode rawSchema)
         {
-            JsonObject rawObject = rawSchema.Object;
+            JsonObject rawObject = rawSchema.AsObject();
 
             string description = "Schema referenced without builder parts";
-            if (rawObject.TryGetValue("description", out JsonValue descriptionValue) && descriptionValue.Type == JsonValueType.String)
+            if (rawObject.TryGetPropertyValue("description", out JsonNode descriptionValue) && descriptionValue.GetValueKind() == JsonValueKind.String)
             {
-                description = descriptionValue.String;
+                description = descriptionValue.GetValue<string>();
             }
             List<string> commentLines = GenerateCommentLines(typeName, description, minSplitLength: 70, maxSplitLength: 90);
 
@@ -1017,9 +1019,9 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 .L("{")
                 .IndentIncrease();
 
-            if (rawObject.TryGetValue("properties", out JsonValue propertiesValue) && propertiesValue.Type == JsonValueType.Object)
+            if (rawObject.TryGetPropertyValue("properties", out JsonNode propertiesValue) && propertiesValue.GetValueKind() == JsonValueKind.Object)
             {
-                foreach (KeyValuePair<string, JsonValue> propertyPair in propertiesValue.Object)
+                foreach (KeyValuePair<string, JsonNode> propertyPair in propertiesValue.AsObject())
                 {
                     string itemType = MakeCorrectItemType(propertyPair.Value, propertyPair.Key);
                     GenerateProperty(codeBuilder, propertyPair.Key, null, itemType, string.Empty);
@@ -1284,10 +1286,10 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         private string GenerateDefaultIfExisting(IdentifierString key, JSBArray jsonSchemaBuilderArray)
         {
-            if (jsonSchemaBuilderArray.DefaultValue != null && jsonSchemaBuilderArray.DefaultValue.Type == JsonValueType.Array)
+            if (jsonSchemaBuilderArray.DefaultValue != null && jsonSchemaBuilderArray.DefaultValue.GetValueKind() == JsonValueKind.Array)
             {
                 List<string> literals = new List<string>();
-                foreach (JsonValue item in jsonSchemaBuilderArray.DefaultValue.Array)
+                foreach (JsonNode item in jsonSchemaBuilderArray.DefaultValue.AsArray())
                 {
                     literals.Add(ConvertJsonValueToJavaLiteral(item));
                 }
@@ -1473,19 +1475,21 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         }
 
         /// <summary>
-        /// Converts a JsonValue to a Java literal for use in an Arrays.asList initializer
+        /// Converts a JsonNode to a Java literal for use in an Arrays.asList initializer
         /// </summary>
-        private string ConvertJsonValueToJavaLiteral(JsonValue value)
+        private string ConvertJsonValueToJavaLiteral(JsonNode value)
         {
-            switch (value.Type)
+            switch (value.GetValueKind())
             {
-                case JsonValueType.String:
-                    return $"\"{EscapeJavaStringLiteral(value.String)}\"";
-                case JsonValueType.Number:
-                    return value.Number.ToString(CultureInfo.InvariantCulture);
-                case JsonValueType.Boolean:
-                    return value.Boolean ? "Boolean.TRUE" : "Boolean.FALSE";
-                case JsonValueType.Null:
+                case JsonValueKind.String:
+                    return $"\"{EscapeJavaStringLiteral(value.GetValue<string>())}\"";
+                case JsonValueKind.Number:
+                    return value.GetValue<double>().ToString(CultureInfo.InvariantCulture);
+                case JsonValueKind.True:
+                    return "Boolean.TRUE";
+                case JsonValueKind.False:
+                    return "Boolean.FALSE";
+                case JsonValueKind.Null:
                     return "null";
                 default:
                     return value.ToString();

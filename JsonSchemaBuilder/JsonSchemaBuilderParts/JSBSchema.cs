@@ -1,15 +1,18 @@
-﻿using DevelApp.Utility.Model;
-using Manatee.Json;
-using Manatee.Json.Schema;
+using DevelApp.Utility.Model;
+using Json.Schema;
+using System;
 using System.Collections.Generic;
+using System.Text.Json.Nodes;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
-    public class JSBSchema : AbstractJSBPart<JsonValue>
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
+    public class JSBSchema : AbstractJSBPart<JsonNode>
     {
         public static JSBSchema BuildSchema(JsonSchema jsonSchema)
         {
-            if(jsonSchema.Equals(JsonSchema.Empty))
+            var rootKeywords = jsonSchema?.Root?.Keywords;
+            if (rootKeywords == null || rootKeywords.Length == 0)
             {
                 return new JSBSchema("NoValidation", "Represents an empty schema with disabled validation");
             }
@@ -18,15 +21,29 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             
             //TODO build from the schema
 
-            JSBSchema jsonSchemaBuilderSchema = new JSBSchema(jsonSchema.Id, jsonSchema.Description(), topPart);
+            string schemaId = null;
+            string schemaDescription = null;
+            foreach (var keywordData in rootKeywords)
+            {
+                if (keywordData.Handler.Name.Equals("$id"))
+                {
+                    schemaId = keywordData.RawValue.ToString();
+                }
+                else if (keywordData.Handler.Name.Equals("description"))
+                {
+                    schemaDescription = keywordData.RawValue.ToString();
+                }
+            }
+
+            JSBSchema jsonSchemaBuilderSchema = new JSBSchema(schemaId, schemaDescription, topPart);
 
             return jsonSchemaBuilderSchema;
         }
 
         public JSBSchema(IdentifierString schemaName, string description, 
             IJSBPart topPart = null, 
-            List<IJSBPart> defs = null, JsonValue defaultValue = null,
-            List<JsonValue> examples = null, List<JsonValue> enums = null, bool isRequired = false) 
+            List<IJSBPart> defs = null, JsonNode defaultValue = null,
+            List<JsonNode> examples = null, List<JsonNode> enums = null, bool isRequired = false) 
             : base(schemaName, description, isRequired, defaultValue, examples, enums)
         {
             TopPart = topPart;
@@ -52,30 +69,37 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder()
         {
             if (TopPart != null)
             {
-                JsonSchema returnSchema = TopPart.AsJsonSchema();
-                returnSchema.Id(Name);
-                returnSchema.Schema("http://json-schema.org/draft-07/schema#");
+                JsonSchemaBuilder builder = TopPart.AsJsonSchemaBuilder()
+                    .Id(Name)
+                    .Schema("http://json-schema.org/draft-07/schema#");
+                List<(string name, JsonSchemaBuilder definition)> definitionsOut =
+                    new List<(string name, JsonSchemaBuilder definition)>();
                 foreach (var pair in Definitions)
                 {
-                    returnSchema.Definition(pair.Key, pair.Value.AsJsonSchema());
+                    definitionsOut.Add((pair.Key, pair.Value.AsJsonSchemaBuilder()));
                 }
-                return returnSchema;
+                if (definitionsOut.Count > 0)
+                {
+                    builder.Definitions(definitionsOut.ToArray());
+                }
+
+                return builder;
             }
             else
             {
-                //A fresh instance is used instead of the JsonSchema.Empty singleton so that
-                //setting the Id below does not mutate the shared static schema instance,
-                //which would add a duplicate $id on every schema built after the first
-                JsonSchema returnSchema = new JsonSchema();
-                returnSchema.Id(Name);
-                returnSchema.Schema("http://json-schema.org/draft-07/schema#");
-                returnSchema.Title(Name);
-                returnSchema.Description(Description);
-                return returnSchema;
+                //A fresh builder is used so no shared state is mutated between
+                //schemas built after the first
+                JsonSchemaBuilder builder = new JsonSchemaBuilder()
+                    .Id(Name)
+                    .Schema("http://json-schema.org/draft-07/schema#")
+                    .Title(Name)
+                    .Description(Description);
+
+                return builder;
             }
         }
     }

@@ -1,18 +1,19 @@
-﻿using DevelApp.Utility.Model;
-using Manatee.Json;
-using Manatee.Json.Schema;
+using DevelApp.Utility.Model;
+using Json.Schema;
+using System.Text.Json.Nodes;
 using System.Collections.Generic;
 
 namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
 {
+    using JsonSchemaBuilder = Json.Schema.JsonSchemaBuilder;
     /// <summary>
     /// Defines JsonSchema object
     /// </summary>
-    public class JSBObject : AbstractJSBPart<JsonValue>
+    public class JSBObject : AbstractJSBPart<JsonNode>
     {
         public JSBObject(IdentifierString objectName, string description,
             List<IJSBPart> props = null, bool isRequired = false,
-            JsonValue defaultValue = null, List<JsonValue> examples = null, List<JsonValue> enums = null, bool isExpandable = false,
+            JsonNode defaultValue = null, List<JsonNode> examples = null, List<JsonNode> enums = null, bool isExpandable = false,
             List<IJSBPart> defs = null)
             : base(objectName, description, isRequired, defaultValue: defaultValue, examples: examples, enums: enums)
         {
@@ -51,15 +52,21 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchema AsJsonSchema()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder()
         {
-            JsonSchema returnSchema = InitialJsonSchema()
-                .Type(JsonSchemaType.Object)
+            JsonSchemaBuilder builder = InitialJsonSchema()
+                .Type(SchemaValueType.Object)
                 .AdditionalProperties(IsExpandable);
             //Add properties
+            List<(string name, JsonSchemaBuilder property)> propertiesOut =
+                new List<(string name, JsonSchemaBuilder property)>();
             foreach (IJSBPart property in Properties.Values)
             {
-                returnSchema.Property(StartWithSmallLetter(property.Name), property.AsJsonSchema());
+                propertiesOut.Add((StartWithSmallLetter(property.Name), property.AsJsonSchemaBuilder()));
+            }
+            if (propertiesOut.Count > 0)
+            {
+                builder.Properties(propertiesOut.ToArray());
             }
             //Add required
             List<string> requiredNames = new List<string>();
@@ -72,9 +79,9 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
             if (requiredNames.Count > 0)
             {
-                returnSchema.Required(requiredNames.ToArray());
+                builder.Required(requiredNames);
             }
-            return returnSchema;
+            return builder;
         }
     }
 }
