@@ -68,7 +68,8 @@ My intention is to support all parts of the official Json Schema Draft 7 and som
   subschemas are not merged (NotImplemented), arrays without a single item schema are not
   supported, the TSQL generator resolves only references that map to registered builder parts
   (whole schemas and `/definitions/` fragments), and the C# Entities generator has no reference
-  support. Remote schemas are downloaded but code is not generated from them.
+  support. Remote references are downloaded and fully parsed with the opt-in pinned flow
+  described under Remote schema code generation below.
 
 ## Code generation
 Code generation is built based on the above schema parts. The generation is done in batch mode
@@ -82,6 +83,51 @@ Code generation is built based on the above schema parts. The generation is done
 * Java
 * TSQL DDL for Database First approach to development
 
+## Parsing schema documents
+`JSBSchemaParser.ParseDocument` turns a schema document given as JSON into the builder part
+tree, and `ParsePart` parses a single subschema. Both `definitions` and `$defs` containers are
+accepted on every level, parsed definitions keep the wire keys they were authored with so
+fragment references into them resolve, and the document dialect is detected from `$schema`.
+
+The parser represents what the builder parts can express, so keywords the parts cannot carry
+fail LOUD instead of silently changing the meaning of the schema: `patternProperties`,
+`propertyNames`, `if`/`then`/`else`, `not`, `contains`, `dependencies`/`dependentSchemas`/
+`dependentRequired`, `minProperties`/`maxProperties`, `exclusiveMin/Max`, `unevaluated*`,
+`additionalItems`, `$dynamicRef`/`$recursiveRef`, non scalar `const`, boolean schemas,
+compositions combined with other body keywords and `$ref` with constraint siblings.
+
+Rounding behavior to know about:
+* a type array of `[type, null]` is approximated as the base type marked optional (the parts
+  cannot express required but nullable)
+* typed formats (`date`, `time`, `date-time`, `email`, `uuid`, `uri`, `byte`) map to their
+  typed parts only when unconstrained; otherwise the value stays a plain `JSBString` that
+  carries the format
+* anonymous positions (array items, tuple positions, composition variants) take their part
+  name from the subschema `title` when present (builder emitted schemas round trip their part
+  names this way); without a title a stable positional name is generated
+* wire keys that are not identifier like are sanitized for the part name, so the re-emitted
+  document diverges from the source for exotic keys
+* emitted schemas carry a `description` on every part, so descriptions default to a
+  generated text when the source subschema has none
+
+## Remote schema code generation
+Remote references are downloaded, parsed into the SAME builder part tree and code generated
+from them like local schemas. Because a remote download silently changes what the generated
+code means, both are opt-in on the `CodeGenerator`:
+
+* `EnableRemoteSchemas` must be set to `true` (default `false`; a remote reference without the
+  opt-in fails with an instructive exception)
+* `RemoteSchemaDownloader` (default `HttpSchemaDownloader`) performs the downloads and can be
+  replaced for testing
+
+The first opt-in download writes a pin file next to the mirrored schema file recording the url
+and the SHA-256 of the downloaded content. Every later run downloads again (the flow expects
+network) and verifies the content against the pin: a hash mismatch is a HARD failure so
+upstream changes can never silently alter the generated code. To accept a changed remote
+schema delete the pin file and the mirror, then re-run. Remote schemas that reference further
+remote schemas resolve to a fixpoint, and an unparsable remote schema fails loud with the url
+in the message.
+
 ## TODO
 * Builder parts for the later dialect advanced keywords ($anchor/$dynamicRef/$recursiveRef, dependentSchemas/dependentRequired, unevaluatedProperties/unevaluatedItems)
-* Remote schema code generation support
+* Emitted default values: the typed parts carry a default in the part model but do not emit it to the schema document

@@ -155,13 +155,14 @@ namespace DevelApp.JsonSchemaBuilder
         }
 
         /// <summary>
-        /// Main function. Used to build JsonSchema from JsonSchemaParts
+        /// Main function. Used to build JsonSchema from JsonSchemaParts. The schema
+        /// document is parsed into the full builder part tree so code generation
+        /// works from externally authored schemas as well
         /// </summary>
         /// <returns></returns>
         protected virtual JSBSchema BuildJsonSchema(JsonNode jsonValue)
         {
-            JsonSchema deserializedSchema = JsonSchema.FromText(jsonValue.ToJsonString(), JSBJsonSchemaBuild.CreateBuildOptions(), JSBJsonSchemaBuild.BaseUri);
-            return BuildJsonSchema(deserializedSchema);
+            return JSBSchemaParser.ParseDocument(jsonValue);
         }
 
         /// <summary>
