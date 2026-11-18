@@ -72,20 +72,48 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
         public abstract JSBPartType PartType { get; }
 
         /// <summary>
-        /// Returns the part as a fully built Json.Schema JsonSchema
+        /// Returns the part as a fully built Json.Schema JsonSchema with
+        /// draft-07 semantics
         /// </summary>
-        public JsonSchema AsJsonSchema()
+        public virtual JsonSchema AsJsonSchema()
         {
             return JSBJsonSchemaBuild.Build(AsJsonSchemaBuilder());
         }
 
-        public abstract JsonSchemaBuilder AsJsonSchemaBuilder();
+        /// <summary>
+        /// Returns the part as a fully built Json.Schema JsonSchema with the
+        /// semantics of the given schema version
+        /// </summary>
+        /// <param name="schemaVersion"></param>
+        /// <returns></returns>
+        public virtual JsonSchema AsJsonSchema(JSBSchemaVersion schemaVersion)
+        {
+            return JSBJsonSchemaBuild.Build(AsJsonSchemaBuilder(schemaVersion), schemaVersion);
+        }
+
+        /// <summary>
+        /// Returns the part as a JsonSchemaBuilder with draft-07 semantics
+        /// </summary>
+        public virtual JsonSchemaBuilder AsJsonSchemaBuilder()
+        {
+            return AsJsonSchemaBuilder(JSBSchemaVersion.Draft7);
+        }
+
+        /// <summary>
+        /// Returns the part as a JsonSchemaBuilder with the semantics of the
+        /// given schema version
+        /// </summary>
+        /// <param name="schemaVersion"></param>
+        /// <returns></returns>
+        public abstract JsonSchemaBuilder AsJsonSchemaBuilder(JSBSchemaVersion schemaVersion);
 
         /// <summary>
         /// Starts every schema part with the common keywords: title, description,
-        /// $comment, examples, enum and the definitions carried by the part
+        /// $comment, examples, enum and the definitions carried by the part.
+        /// The container keyword for definitions follows the schema version:
+        /// definitions for draft-7 and $defs for the later dialects
         /// </summary>
-        protected JsonSchemaBuilder InitialJsonSchema()
+        protected JsonSchemaBuilder InitialJsonSchema(JSBSchemaVersion schemaVersion)
         {
             JsonSchemaBuilder builder = new JsonSchemaBuilder()
                 .Title(Name)
@@ -115,11 +143,18 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 new List<(string name, JsonSchemaBuilder definition)>();
             foreach (var pair in Definitions)
             {
-                definitionsOut.Add((pair.Key, pair.Value.AsJsonSchemaBuilder()));
+                definitionsOut.Add((pair.Key, pair.Value.AsJsonSchemaBuilder(schemaVersion)));
             }
             if (definitionsOut.Count > 0)
             {
-                builder.Definitions(definitionsOut.ToArray());
+                if (schemaVersion.UsesDefsContainer())
+                {
+                    builder.Defs(definitionsOut.ToArray());
+                }
+                else
+                {
+                    builder.Definitions(definitionsOut.ToArray());
+                }
             }
 
             return builder;

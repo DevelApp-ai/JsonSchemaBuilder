@@ -2,11 +2,32 @@
 Simple Json Schema builder to make it faster to combine in code and to generate code for the schema making it possible to use schema first.
 
 As of version 2.0 the builder runs on [json-everything](https://github.com/gregsdennis/json-everything) (JsonSchema.Net) with [System.Text.Json](https://learn.microsoft.com/dotnet/standard/serialization/system-text-json-overview)
-instead of Manatee.Json. The emitted wire format stays draft 7: the same keyword shapes and the `definitions` vocabulary,
+instead of Manatee.Json. The default wire format stays draft 7: the same keyword shapes and the `definitions` vocabulary,
 so existing schemas and downstream consumers do not change. Building a part returns a `Json.Schema.JsonSchema`; every
 part also exposes `AsJsonSchemaBuilder()` so schemas can be composed before conversion. Schema parts register through
 `IJSBPart.AsJsonSchema()`, and references must be well formed RFC 3986 uri references since references are resolved
 eagerly with System.Uri.
+
+## Schema dialects (draft 7, 2019-09, 2020-12)
+The default dialect is draft 7 so existing schemas keep their exact wire format. Later dialects are opt-in per schema
+with `JSBSchemaVersion`:
+
+```csharp
+JSBSchema schema = new JSBSchema("MySchema", "Description", topPart,
+    schemaVersion: JSBSchemaVersion.Draft202012);
+```
+
+* Draft7 (default): `definitions` container, tuple form `items`, `http://json-schema.org/draft-07/schema#`
+* Draft201909: `$defs` container, tuple form `items` still allowed, `https://json-schema.org/draft/2019-09/schema`
+* Draft202012: `$defs` container, tuple form `items` replaced by `prefixItems`, `https://json-schema.org/draft/2020-12/schema`
+
+Individual parts can also be built for a later dialect with `AsJsonSchema(JSBSchemaVersion)` and
+`AsJsonSchemaBuilder(JSBSchemaVersion)` so they can be embedded in a schema of that dialect. A `JSBSchema` carries its
+own dialect: its `SchemaVersion` wins no matter which overload builds it. Reference fragments resolve leniently
+against both `/definitions/` and `/$defs/` containers.
+
+Not yet covered by builder parts (left as TODO): `$anchor`/`$dynamicRef`/`$recursiveRef`, `dependentSchemas`/
+`dependentRequired`, `unevaluatedProperties`/`unevaluatedItems`.
 
 Why another code generation tool from Json Schema ? Mainly the ones made are either supporting a too old version of Json Schema or generated code with the wrong structure. I also needed dynamic code generation to make dynamic API based on defined messages for making dynamic MVC controller for a message based system so that an API can be supported on the system for others to interface with.
 
@@ -62,5 +83,5 @@ Code generation is built based on the above schema parts. The generation is done
 * TSQL DDL for Database First approach to development
 
 ## TODO
-* Support for later than Draft 7 schema (the json-everything engine already supports 2019-09 and 2020-12 dialects)
+* Builder parts for the later dialect advanced keywords ($anchor/$dynamicRef/$recursiveRef, dependentSchemas/dependentRequired, unevaluatedProperties/unevaluatedItems)
 * Remote schema code generation support

@@ -56,9 +56,9 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
             }
         }
 
-        public override JsonSchemaBuilder AsJsonSchemaBuilder()
+        public override JsonSchemaBuilder AsJsonSchemaBuilder(JSBSchemaVersion schemaVersion)
         {
-            JsonSchemaBuilder builder = InitialJsonSchema()
+            JsonSchemaBuilder builder = InitialJsonSchema(schemaVersion)
                 .Type(SchemaValueType.Integer);
 
             if (MultipleOf.HasValue)
