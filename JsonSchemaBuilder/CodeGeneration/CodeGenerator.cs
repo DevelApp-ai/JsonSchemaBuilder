@@ -5,7 +5,7 @@ using Json.Schema;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Net;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -14,6 +14,11 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 {
     public class CodeGenerator
     {
+        /// <summary>
+        /// The schema file ending used for mirror files and registry keys
+        /// </summary>
+        private const string SCHEMA_FILE_ENDING = ".schema.json";
+
         public Dictionary<string, IJsonSchemaDefinition> RegisteredJsonSchemas { get; } = new Dictionary<string, IJsonSchemaDefinition>();
 
         /// <summary>
@@ -31,6 +36,20 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
 
         public string ApplicationRoot { get; }
         public string JsonSchemaApplicationRoot { get; }
+
+        /// <summary>
+        /// Opt-in for remote schema resolution. Remote schema references are
+        /// only downloaded, pinned and parsed into builder parts when this is
+        /// enabled. The default is false so code generation stays offline and
+        /// deterministic until the opt-in is set
+        /// </summary>
+        public bool EnableRemoteSchemas { get; set; } = false;
+
+        /// <summary>
+        /// The downloader used for remote schema downloads. Injectable so tests
+        /// and hosts can supply deterministic fake downloads
+        /// </summary>
+        public ISchemaDownloader RemoteSchemaDownloader { get; set; } = new HttpSchemaDownloader();
 
         /// <summary>
         /// Generate a list of code to memory and suggest a filename from registered IJsonSchemaDefinitions.
@@ -65,14 +84,29 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         }
 
         /// <summary>
-        /// Makes schema resolution and moves to local file structure
+        /// Makes schema resolution and moves to local file structure. Remote
+        /// registrations add entries to RegisteredJsonSchemas during the walk,
+        /// so the walk processes a snapshot and loops until no new schemas were
+        /// registered. Remote schemas are walked like local ones so references
+        /// inside them can pull in further remotes
         /// </summary>
         /// <param name="schema"></param>
         private void DoReferenceResolution()
         {
-            foreach (IJsonSchemaDefinition schema in RegisteredJsonSchemas.Values)
+            HashSet<string> walkedFileNames = new HashSet<string>();
+            bool walkedAll = false;
+            while (!walkedAll)
             {
-                DoReferenceResolution(schema.JsonSchemaBuilderSchema, schema.Module);
+                walkedAll = true;
+                List<IJsonSchemaDefinition> snapshot = new List<IJsonSchemaDefinition>(RegisteredJsonSchemas.Values);
+                foreach (IJsonSchemaDefinition schema in snapshot)
+                {
+                    if (walkedFileNames.Add(schema.FileName))
+                    {
+                        walkedAll = false;
+                        DoReferenceResolution(schema.JsonSchemaBuilderSchema, schema.Module);
+                    }
+                }
             }
         }
 
@@ -129,7 +163,12 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                             relativeLocalFileWithExpandedDot = Path.Combine(module.ToFilePath, relativeLocalFileWithExpandedDot.Remove(0, 2));
                         }
 
-                        string localFile = Path.Combine(JsonSchemaApplicationRoot, TransformToCamelCase(relativeLocalFileWithExpandedDot));
+                        //The placement of an absolute uri starts with a path separator,
+                        //which Path.Combine would treat as a rooted path on POSIX systems.
+                        //It is trimmed so the mirror lands under the application root
+                        string localFile = Path.Combine(JsonSchemaApplicationRoot,
+                            TransformToCamelCase(relativeLocalFileWithExpandedDot)
+                                .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                         string uriWithoutFragmentString = jsonSchemaBuilderIriReference.IriReference.OriginalString;
                         if (!string.IsNullOrWhiteSpace(jsonSchemaBuilderIriReference.Fragment))
                         {
@@ -137,34 +176,29 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                         }
                         if (Uri.TryCreate(uriWithoutFragmentString, UriKind.RelativeOrAbsolute, out Uri uriWithoutFragment))
                         {
-                            if (!File.Exists(localFile))
+                            bool isRemote = jsonSchemaBuilderIriReference.IriReference.IsAbsoluteUri && !jsonSchemaBuilderIriReference.IriReference.IsLoopback;
+                            if (RegisteredJsonSchemas.ContainsKey(relativeLocalFileWithExpandedDot))
                             {
-                                if (jsonSchemaBuilderIriReference.IriReference.IsAbsoluteUri && !jsonSchemaBuilderIriReference.IriReference.IsLoopback)
+                                //Already registered in this run, for example pulled in by another remote reference
+                            }
+                            else if (isRemote)
+                            {
+                                if (!EnableRemoteSchemas)
                                 {
-                                    try
+                                    if (!File.Exists(localFile))
                                     {
-                                        FileInfo fileInfo = new FileInfo(localFile);
-                                        string directory = fileInfo.Directory.FullName;
-                                        if (!Directory.Exists(directory))
-                                        {
-                                            Directory.CreateDirectory(directory);
-                                        }
-                                        using (WebClient myWebClient = new WebClient())
-                                        {
-                                            // Download the Web resource and save it into the current filesystem folder.
-                                            myWebClient.DownloadFile(uriWithoutFragment, localFile);
-                                            //TODO generate builderparts from schema and register in _registeredJsonSchemas
-                                        }
+                                        throw new CodeGenerationException($"Remote schema reference {uriWithoutFragment} was not found locally at {localFile}. Remote schema resolution is opt-in: set {nameof(EnableRemoteSchemas)} to true to download, pin and generate code from remote schemas");
                                     }
-                                    catch (Exception ex)
-                                    {
-                                        throw new CodeGenerationException($"Resource at {uriWithoutFragment} could not be downloaded", ex);
-                                    }
+                                    //A pre-placed mirror without registration keeps the historical raw JSON fallback behavior
                                 }
                                 else
                                 {
-                                    throw new CodeGenerationException($"Iri reference {uriWithoutFragment} was not found locally at {localFile}");
+                                    DownloadAndRegisterRemoteSchema(uriWithoutFragment, relativeLocalFileWithExpandedDot, localFile);
                                 }
+                            }
+                            else if (!File.Exists(localFile))
+                            {
+                                throw new CodeGenerationException($"Iri reference {uriWithoutFragment} was not found locally at {localFile}");
                             }
                         }
                     }
@@ -218,9 +252,210 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
         }
 
         /// <summary>
-        /// Generate code to a path from registered IJsonSchemaDefinitions
+        /// Downloads a remote schema, verifies it against the pin file (or pins
+        /// it on the first opt-in download), writes the local mirror and parses
+        /// the document into builder parts so code is generated from it like
+        /// from a locally authored schema. The content is downloaded on every
+        /// run so drift from the pinned content is a hard failure
         /// </summary>
-        /// <param name="code"></param>
+        /// <param name="uriWithoutFragment"></param>
+        /// <param name="relativeLocalFileWithExpandedDot">The registry key the reference is looked up with</param>
+        /// <param name="localFile">The mirror file path</param>
+        private void DownloadAndRegisterRemoteSchema(Uri uriWithoutFragment, string relativeLocalFileWithExpandedDot, string localFile)
+        {
+            string url = uriWithoutFragment.ToString();
+
+            string content;
+            try
+            {
+                content = RemoteSchemaDownloader.Download(uriWithoutFragment);
+            }
+            catch (Exception ex)
+            {
+                throw new CodeGenerationException($"Resource at {url} could not be downloaded", ex);
+            }
+            string sha256 = Sha256Hex(content);
+
+            string pinFile = localFile + ".pin";
+            if (File.Exists(pinFile))
+            {
+                //Verify against the pin: a remote schema that changed without repinning is a hard failure
+                string pinUrl = null;
+                string pinSha256 = null;
+                try
+                {
+                    JsonNode pinNode = JsonNode.Parse(File.ReadAllText(pinFile));
+                    pinUrl = pinNode?["url"]?.GetValue<string>();
+                    pinSha256 = pinNode?["sha256"]?.GetValue<string>();
+                }
+                catch (Exception ex)
+                {
+                    throw new CodeGenerationException($"Pin file {pinFile} could not be read. If it is stale, delete it and re-run", ex);
+                }
+                if (!string.Equals(pinUrl, url, StringComparison.Ordinal))
+                {
+                    throw new CodeGenerationException($"Pin file {pinFile} pins url {pinUrl} but the reference points at {url}. Delete the pin file and re-run to pin the new url");
+                }
+                if (!string.Equals(pinSha256, sha256, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new CodeGenerationException($"The remote schema at {url} changed since it was pinned (pinned sha256 {pinSha256}, downloaded sha256 {sha256}). If the change is intentional, delete the pin file {pinFile} and re-run to pin the new content");
+                }
+            }
+            else
+            {
+                //First opt-in download: pin the url and the content hash
+                try
+                {
+                    JsonObject pinNode = new JsonObject();
+                    pinNode["url"] = url;
+                    pinNode["sha256"] = sha256;
+                    FileInfo pinFileInfo = new FileInfo(pinFile);
+                    if (!Directory.Exists(pinFileInfo.Directory.FullName))
+                    {
+                        Directory.CreateDirectory(pinFileInfo.Directory.FullName);
+                    }
+                    File.WriteAllText(pinFile, pinNode.ToJsonString(new JsonSerializerOptions { WriteIndented = true }));
+                }
+                catch (Exception ex)
+                {
+                    throw new CodeGenerationException($"Pin file {pinFile} could not be written", ex);
+                }
+            }
+
+            //Refresh the local mirror so the schema is on disk like locally referenced schemas
+            try
+            {
+                FileInfo fileInfo = new FileInfo(localFile);
+                if (!Directory.Exists(fileInfo.Directory.FullName))
+                {
+                    Directory.CreateDirectory(fileInfo.Directory.FullName);
+                }
+                File.WriteAllText(localFile, content);
+            }
+            catch (Exception ex)
+            {
+                throw new CodeGenerationException($"Local mirror {localFile} could not be written", ex);
+            }
+
+            //Parse the document into builder parts and register it under the
+            //exact key references are looked up with
+            JsonNode schemaJson;
+            try
+            {
+                schemaJson = JsonNode.Parse(content);
+            }
+            catch (Exception ex)
+            {
+                throw new CodeGenerationException($"The remote schema at {url} is not valid JSON", ex);
+            }
+
+            JSBSchema parsedSchema;
+            try
+            {
+                string fileName = Path.GetFileName(localFile);
+                if (fileName.EndsWith(SCHEMA_FILE_ENDING, StringComparison.OrdinalIgnoreCase))
+                {
+                    fileName = fileName.Substring(0, fileName.Length - SCHEMA_FILE_ENDING.Length);
+                }
+                parsedSchema = JSBSchemaParser.ParseDocument(schemaJson, new IdentifierString(TransformToTitleCase(SanitizeToNamespaceText(fileName))), $"Schema parsed from the remote schema at {url}");
+            }
+            catch (Exception ex)
+            {
+                throw new CodeGenerationException($"The remote schema at {url} could not be parsed into builder parts: {ex.Message}", ex);
+            }
+
+            NamespaceString module;
+            try
+            {
+                module = new NamespaceString(DeriveRemoteModule(relativeLocalFileWithExpandedDot));
+            }
+            catch (Exception ex)
+            {
+                throw new CodeGenerationException($"A namespace could not be derived for the remote schema at {url}: {ex.Message}", ex);
+            }
+
+            RemoteSchemaDefinition remoteSchemaDefinition = new RemoteSchemaDefinition(parsedSchema, module, relativeLocalFileWithExpandedDot);
+            RegisteredJsonSchemas.Add(relativeLocalFileWithExpandedDot, remoteSchemaDefinition);
+        }
+
+        /// <summary>
+        /// Derives the module (namespace) from the mirror path: the host and path
+        /// segments of the mirror become namespace segments, dots become path
+        /// separators again when the module is turned back into file paths by
+        /// the generators. Characters that are not identifier-like are stripped
+        /// and segments starting with a digit are prefixed with x
+        /// </summary>
+        /// <param name="relativeLocalFileWithExpandedDot"></param>
+        /// <returns></returns>
+        private string DeriveRemoteModule(string relativeLocalFileWithExpandedDot)
+        {
+            string[] pathSegments = relativeLocalFileWithExpandedDot.Split(new char[] { '/', '\\' }, StringSplitOptions.RemoveEmptyEntries);
+            List<string> namespaceSegments = new List<string>();
+            foreach (string pathSegment in pathSegments)
+            {
+                if (pathSegment.EndsWith(SCHEMA_FILE_ENDING, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                string cleaned = SanitizeToNamespaceText(pathSegment);
+                if (!string.IsNullOrWhiteSpace(cleaned))
+                {
+                    namespaceSegments.Add(cleaned);
+                }
+            }
+            if (namespaceSegments.Count == 0)
+            {
+                throw new CodeGenerationException($"A namespace could not be derived from {relativeLocalFileWithExpandedDot}");
+            }
+            return string.Join(".", namespaceSegments);
+        }
+
+        private static string Sha256Hex(string content)
+        {
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(content));
+                StringBuilder stringBuilder = new StringBuilder(hash.Length * 2);
+                foreach (byte hashByte in hash)
+                {
+                    stringBuilder.Append(hashByte.ToString("x2"));
+                }
+                return stringBuilder.ToString();
+            }
+        }
+
+        /// <summary>
+        /// Strips characters that are not usable in identifiers so path segments
+        /// and file names can be turned into names and namespace segments
+        /// </summary>
+        /// <param name="raw"></param>
+        /// <returns></returns>
+        private static string SanitizeToNamespaceText(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return raw;
+            }
+            StringBuilder stringBuilder = new StringBuilder();
+            foreach (char character in raw)
+            {
+                if ((character >= 'a' && character <= 'z') || (character >= 'A' && character <= 'Z') || (character >= '0' && character <= '9'))
+                {
+                    stringBuilder.Append(character);
+                }
+            }
+            string cleaned = stringBuilder.ToString();
+            if (cleaned.Length == 0)
+            {
+                return cleaned;
+            }
+            if (cleaned[0] >= '0' && cleaned[0] <= '9')
+            {
+                cleaned = "x" + cleaned;
+            }
+            return cleaned;
+        }
+
         public void GenerateToFile(Code code, Serializer serializer = Serializer.Newtonsoft)
         {
             List<(string fileName, string code)> tupleList = Generate(code, serializer);
@@ -285,10 +520,14 @@ namespace DevelApp.JsonSchemaBuilder.CodeGeneration
                 return (null, ResolveJsonPointer(ToJsonNode(jsonSchemaDefinition.JsonSchemaBuilderSchema), jSBRef.Fragment));
             }
 
-            //Search for the schema file as .schema.json and .json and load it when found
+            //Search for the schema file as .schema.json and .json and load it when found.
+            //The placement of an absolute uri starts with a path separator, which
+            //Path.Combine would treat as a rooted path on POSIX systems, so it is trimmed
             string schemaString = string.Empty;
 
-            string localfile = Path.Combine(JsonSchemaApplicationRoot, relativeFileNameWithExpandedDot);
+            string localfile = Path.Combine(JsonSchemaApplicationRoot,
+                relativeFileNameWithExpandedDot
+                    .TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
             if (File.Exists(localfile))
             {
                 schemaString = File.ReadAllText(localfile);

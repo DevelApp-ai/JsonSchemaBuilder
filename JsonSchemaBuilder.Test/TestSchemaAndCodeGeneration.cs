@@ -880,7 +880,13 @@ namespace JsonSchemaBuilder.Test
         {
             return AppDomain.CurrentDomain.GetAssemblies()
                 .SelectMany(a => a.GetTypes())
-                .Where(p => interfaceType.IsAssignableFrom(p) && p.IsClass && !p.IsAbstract);
+                //Library provided definitions like RemoteSchemaDefinition are not
+                //authored test schemas: they wrap remote documents and have no
+                //parameterless constructor. The remote fixtures are excluded too:
+                //they need a fake downloader and the opt-in to resolve
+                .Where(p => interfaceType.IsAssignableFrom(p) && p.IsClass && !p.IsAbstract
+                    && p.Namespace != "DevelApp.JsonSchemaBuilder.CodeGeneration"
+                    && !p.Namespace.StartsWith("JsonSchemaBuilder.Test.RemoteFixtures"));
         }
 
         private static IJsonSchemaDefinition GetJsonSchemaInstance(Type jsonSchemaType)

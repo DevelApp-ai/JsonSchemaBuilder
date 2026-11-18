@@ -11,33 +11,20 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
     {
         public static JSBSchema BuildSchema(JsonSchema jsonSchema)
         {
-            var rootKeywords = jsonSchema?.Root?.Keywords;
-            if (rootKeywords == null || rootKeywords.Length == 0)
+            if (jsonSchema == null)
             {
-                return new JSBSchema("NoValidation", "Represents an empty schema with disabled validation");
+                return new JSBSchema(new IdentifierString("NoValidation"), "Represents an empty schema with disabled validation");
             }
 
-            IJSBPart topPart = null;
-            
-            //TODO build from the schema
-
-            string schemaId = null;
-            string schemaDescription = null;
-            foreach (var keywordData in rootKeywords)
+            //Parse the schema document into the builder part tree instead of only
+            //walking the $id and description as before. Keywords that the builder
+            //parts cannot represent fail loud with a SchemaParseException
+            JsonNode jsonSchemaAsNode = System.Text.Json.JsonSerializer.SerializeToNode(jsonSchema, JSBJsonSchemaBuild.SerializerOptions);
+            if (jsonSchemaAsNode is JsonObject rootObject && rootObject.Count == 0)
             {
-                if (keywordData.Handler.Name.Equals("$id"))
-                {
-                    schemaId = keywordData.RawValue.ToString();
-                }
-                else if (keywordData.Handler.Name.Equals("description"))
-                {
-                    schemaDescription = keywordData.RawValue.ToString();
-                }
+                return new JSBSchema(new IdentifierString("NoValidation"), "Represents an empty schema with disabled validation");
             }
-
-            JSBSchema jsonSchemaBuilderSchema = new JSBSchema(schemaId, schemaDescription, topPart);
-
-            return jsonSchemaBuilderSchema;
+            return JSBSchemaParser.ParseDocument(jsonSchemaAsNode);
         }
 
         public JSBSchema(IdentifierString schemaName, string description, 
@@ -118,6 +105,20 @@ namespace DevelApp.JsonSchemaBuilder.JsonSchemaParts
                 foreach (var pair in Definitions)
                 {
                     definitionsOut.Add((pair.Key, pair.Value.AsJsonSchemaBuilder(effectiveVersion)));
+                }
+                //The definitions carried by the top part were emitted into the
+                //same builder by the part itself and this container call would
+                //replace them: merge them in so definitions on all parts survive.
+                //Schema level definitions win on a key collision
+                if (TopPart.Definitions != null)
+                {
+                    foreach (var pair in TopPart.Definitions)
+                    {
+                        if (!Definitions.ContainsKey(pair.Key))
+                        {
+                            definitionsOut.Add((pair.Key, pair.Value.AsJsonSchemaBuilder(effectiveVersion)));
+                        }
+                    }
                 }
                 if (definitionsOut.Count > 0)
                 {
